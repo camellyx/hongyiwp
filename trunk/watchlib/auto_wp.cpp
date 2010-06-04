@@ -94,7 +94,7 @@ namespace Hongyi_WatchPoint{
 		vector<watchpoint_t>::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end()) {
-			if (iter != wp.start) {
+			if (iter != wp.begin() ) {
 				start_iter = iter - 1;
 				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {
 					start_iter->size = start_iter->size + target_size;
