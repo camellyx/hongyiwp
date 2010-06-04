@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <cstddef>
 
 struct watchpoint_t {
 	int addr;
@@ -43,11 +44,14 @@ int main () {
 			break;
 	}
 */
-	iter = search_address(12, wp);
-	
-	cout << "The result addr is " << (*iter).addr << endl;
-	cout << "The result size is " << (*iter).size << endl;
-	cout << "The reuslt flag is " << (*iter).flags << endl;
+	iter = search_address(19, wp);
+	if (iter != wp.end()) {
+		cout << "The result addr is " << iter->addr << endl;
+		cout << "The result size is " << iter->size << endl;
+		cout << "The reuslt flag is " << iter->flags << endl;
+	}
+	else
+		cout << "The result is Beyond the data structure" << endl;
 	return 0;
 }
 
