@@ -96,14 +96,14 @@ namespace Hongyi_WatchPoint{
 		vector<watchpoint_t>::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
-		cout << "**Now iter->addr is ";
-		if (iter == wp.end() )
-			cout << "NULL" << endl;
-		else
-			cout << iter->addr << endl;
+//		cout << "**Now iter->addr is ";
+//		if (iter == wp.end() )
+//			cout << "NULL" << endl;
+//		else
+//			cout << iter->addr << endl;
 		
 		if (iter == wp.end() ) {
-			cout << "**Oh my god, it can't be !!" << endl;
+//			cout << "**Oh my god, it can't be !!" << endl;
 			if (iter != wp.begin() ) {//We'll need to check if there is some wp ahead of iter and if there is we need to decide whether merge the two.
 				start_iter = iter - 1;
 				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {//Merge condition.
@@ -117,10 +117,9 @@ namespace Hongyi_WatchPoint{
 			wp.push_back(insert_t);
 			return;
 		}
-		cout << "**Is this real??" << endl;
 		if (addr_covered (target_addr, (*iter) ) ) {
 			cout << "**If it enters here, then there must be a bug!" << endl;
-			if (iter->addr == target_addr) {//We will only need to consider splitting if this is true.
+			if (iter->addr == target_addr) {//We will only need to consider merging if this is true.
 				if (iter != wp.begin() ) {
 					start_iter = iter - 1;
 					if(start_iter->addr + start_iter->size == target_addr && start_iter->flags == iter->flags | target_flags) {//We will have to merge the two node.
@@ -138,7 +137,7 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 			else {
-				if (target_flags & iter->flags) {//if the flag is included
+				if ( ( (target_flags ^ iter->flags) & iter->flags) == (target_flags ^ iter->flags) ) {//if the flag is included
 					//then just mark the node as "to be inserted"
 					insert_t.addr = iter->addr;
 					insert_t.size = iter->size;
@@ -146,6 +145,7 @@ namespace Hongyi_WatchPoint{
 					iter = wp.erase(iter);//!!As this watchpoint node is erased, iter automatically increments by 1.
 				}
 				else {//if the flag is not included, we then need to split the watchpoint
+					cout << "OMG, it shouldn't be here!" << endl;
 					insert_t.size = iter->addr + iter->size - target_addr;
 					iter->size = target_addr - iter->addr;//split the watchpoint by modifying iter's length
 					insert_t.addr = target_addr;
@@ -155,11 +155,12 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		else {//The target_addr is not covered at all by the iterator.
-			cout << "**Has it ever been here?" << endl;
-			if (iter != wp.begin()) {
-				cout << "**No iter is wp.begin()!" << endl;
+//			cout << "**Has it ever been here?" << endl;
+			if (iter != wp.begin()) {//Check if the watchpoint to be added should be merged with an wp before it.
+//				cout << "**No iter is wp.begin()!" << endl;
 				start_iter = iter - 1;
-				if (start_iter->addr + start_iter->size == target_size && start_iter->flags == target_flags) {
+				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {
+					cout << "Has it entered here?" << endl;
 					insert_t.addr = start_iter->addr;
 					insert_t.size = iter->addr + iter->size - insert_t.addr;
 					insert_t.flags = target_flags;
@@ -174,7 +175,7 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 			else {
-				cout << "**So, we will have nothing to do." << endl;	
+//				cout << "**So, we will have nothing to do." << endl;	
 				insert_t.addr = target_addr;
 				if (iter->addr < target_addr + target_size)
 					insert_t.size = iter->addr - target_addr;
@@ -185,13 +186,19 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		
+//		cout << "What is iter now?" <<endl;
+//		if (iter == wp.end() )
+//			cout << "iter was now pointing to NULL" << endl;
+//		else
+//			cout << "iter->addr = " << iter->addr << endl;
+		
 		//Iterating part
 		while (iter != wp.end() && iter->addr + iter->size <= target_addr + target_size) {
 			if (iter->addr != insert_t.addr + insert_t.size) {//If there is some blank between the two nodes.
 				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = iter->addr - insert_t.addr;
 				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
-					wp.insert(iter, insert_t);
+					iter = wp.insert(iter, insert_t);
 					iter++;
 					insert_t.addr = insert_t.addr + insert_t.size;
 					insert_t.size = iter->addr - insert_t.addr;
@@ -201,7 +208,7 @@ namespace Hongyi_WatchPoint{
 			if (insert_t.flags == (iter->flags | target_flags) )//then we will need to merge the two node, by just enlarging the insert_t size
 				insert_t.size = insert_t.size + iter->size;
 			else {//if not, then we will first insert insert_t into wp, and update insert_t.
-				wp.insert(iter, insert_t);
+				iter = wp.insert(iter, insert_t);
 				iter++;
 				insert_t.addr = iter->addr;
 				insert_t.size = iter->size;
@@ -210,18 +217,25 @@ namespace Hongyi_WatchPoint{
 			iter = wp.erase(iter);//anyway, we will need to delete the wp we walked through, since we will add them back in the future(Which is also in this code).
 		}
 		
+		if (iter == wp.end() )
+			cout << "!!There should at least be one time" << endl;
+		
 		//Ending part
 		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {//If it's the end of the vector or the end+1 address is not covered by any wp
 			//Then we simply add the watchpoint on it.
-			cout << "The instruction flow is now in here and ready to insert the insert_t.0" << endl;
+//			cout << "The instruction flow is now in here and ready to insert the insert_t.0" << endl;
 			if (target_addr + target_size != insert_t.addr + insert_t.size) {//If there is still some blank between insert_t and the end of the adding address.
-				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
+				if (insert_t.flags == target_flags) {//if the insert node's flag matches the output node, then we just enlarge the insert node.
+//					cout << "**Please, let me be right for 1 time!" << endl;
 					insert_t.size = target_addr + target_size - insert_t.addr;
+				}
 				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
-					if (iter == wp.end() )
+					if (iter == wp.end() ) {
 						wp.push_back(insert_t);
+						iter = wp.end();
+					}
 					else {
-						wp.insert(iter, insert_t);
+						iter = wp.insert(iter, insert_t);
 						iter++;
 					}
 					insert_t.addr = insert_t.addr + insert_t.size;
@@ -230,11 +244,13 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 			//As this is the end of this adding procedure, we will fill up this blank.
-			cout << "The instruction flow is now in here and ready to insert the insert_t.1" << endl;
-			if (iter == wp.end() )
+//			cout << "The instruction flow is now in here and ready to insert the insert_t.1" << endl;
+			if (iter == wp.end() ) {
 				wp.push_back(insert_t);
+				iter = wp.end();
+			}
 			else {
-				wp.insert(iter, insert_t);
+				iter = wp.insert(iter, insert_t);
 				iter++;
 			}
 		}
@@ -244,7 +260,7 @@ namespace Hongyi_WatchPoint{
 				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = iter->addr - insert_t.addr;
 				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
-					wp.insert(iter, insert_t);
+					iter = wp.insert(iter, insert_t);
 					iter++;
 					insert_t.addr = insert_t.addr + insert_t.size;
 					insert_t.size = iter->addr - insert_t.addr;
@@ -258,14 +274,13 @@ namespace Hongyi_WatchPoint{
 //				cout << "Insert_t.addr = " << insert_t.addr << endl;
 //				cout << "Insert_t.size = " << insert_t.size << endl;
 //				cout << "Insert_t.flags = " << insert_t.flags << endl;
-				
+
 //				cout << "Iter's address before insersion: " << iter->addr << endl;
 				
 				insert_t.size = insert_t.size + iter->size;
-				wp.insert(iter, insert_t);
+				
+				iter = wp.insert(iter, insert_t);
 				iter++;
-
-//				cout << "Iter's address after insersion: " << iter->addr << endl;
 
 //				cout << "Print after insersion" << endl;
 //				watch_print();
@@ -274,27 +289,44 @@ namespace Hongyi_WatchPoint{
 //				watch_print();
 			}
 			//If they aren't the same. We then need to merge part of them(maybe). And split the rest.
-			else if (iter->addr < target_addr + target_size) {//If the endding address is not covered, no need to split.
-				if (insert_t.flags == (iter->flags | target_flags) ) {//Check the merge condition.
-					insert_t.size = target_addr + target_size - insert_t.addr;
-					wp.insert(iter, insert_t);
-					iter++;
+			else if (iter->addr < target_addr + target_size) {//If the ending address is not covered, no need to split. (Merging is done by above)
+				if ( ( (target_flags ^ iter->flags) & iter->flags) == (target_flags ^ iter->flags) ) {//if the target_flag is included by iter, then we just left it as before
+					cout << "Ok let's see what inert_t is " << endl;
+					cout << "Insert_t.addr = " << insert_t.addr << endl;
+					cout << "Insert_t.size = " << insert_t.size << endl;
+					cout << "Insert_t.flags = " << insert_t.flags << endl;
+					cout << "And iter->addr is " << iter->addr << endl;
+					iter = wp.insert(iter, insert_t);
 				}
-				else {//If we can't merge, we need to split the iter node
-					wp.insert(iter, insert_t);
-					iter++;
-					insert_t.addr = insert_t.addr + insert_t.size;
-					insert_t.size = target_addr + target_size - insert_t.addr;
-					insert_t.flags = iter->flags | target_flags;
-					wp.insert(iter, insert_t);
-					iter++;
+				else {
+					if (insert_t.flags == (iter->flags | target_flags) ) {//Check the merge condition.
+						insert_t.size = target_addr + target_size - insert_t.addr;
+						iter = wp.insert(iter, insert_t);
+						iter++;
+					}
+					else {
+						
+						//If we can't merge, we need to split the iter node
+						cout << "It should be here !" << endl;
+						cout << "Insert's current flags is: " << insert_t.flags << endl;
+						iter = wp.insert(iter, insert_t);
+						cout << "** Testing print **" << endl;
+						watch_print();
+						cout << "** Testing end **" << endl;
+						iter++;
+						insert_t.addr = insert_t.addr + insert_t.size;
+						insert_t.size = target_addr + target_size - insert_t.addr;
+						insert_t.flags = iter->flags | target_flags;
+						iter = wp.insert(iter, insert_t);
+						iter++;
+					}
+					//splitting(modify the node which covers the ending address of the range)
+					iter->size = iter->addr + iter->size - (target_addr + target_size);
+					iter->addr = target_addr + target_size;
 				}
-				//splitting(modify the node which covers the ending address of the range)
-				iter->size = iter->addr + iter->size - (target_addr + target_size);
-				iter->addr = target_addr + target_size;
 			}
 			else {
-				wp.insert(iter, insert_t);
+				iter = wp.insert(iter, insert_t);
 				iter++;
 			}
 		}
@@ -310,21 +342,33 @@ int main() {
 	WatchPoint watch;
 	int i;
 	
-	for (i = 0; i < 5; i++) {
-		target_addr = (i + 1)*10;
-		target_size = 5;
-		target_flags = WA_READ;
-		watch.add_watchpoint (target_addr, target_size, target_flags);
-	}
-	watch.watch_print();
-	
-	cout << endl << "Now I will add one right before the first watchpoing and they will be adjacent with the same flags" << endl;
-	
-	target_addr = 5;
+	//Adding the front wp
+	target_addr = 10;
 	target_size = 5;
-	target_flags = WA_READ;// | WA_WRITE;
+	target_flags = WA_READ;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	
+	
+	//Adding the end wp
+	target_addr = 20;
+	target_size = 5;
+	target_flags = WA_READ;
+	watch.add_watchpoint (target_addr, target_size, target_flags);
+	
+	target_addr = 30;
+	target_size = 5;
+	target_flags = WA_READ;
+	watch.add_watchpoint (target_addr, target_size, target_flags);
+	cout << endl << "I've added the front and end watch points" << endl;
+
 	watch.watch_print();
+
+	target_addr = 12;
+	target_size = 25;
+	target_flags = WA_READ;
+	watch.add_watchpoint (target_addr, target_size, target_flags);
+
+	watch.watch_print();
+
 	return 0;
 }
