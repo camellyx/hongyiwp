@@ -415,7 +415,19 @@ namespace Hongyi_WatchPoint{
 			iter++;
 		}
 		return fault_num;
-	}		
+	}
+	
+	int WatchPoint::watch_fault(int target_addr, int target_size) {
+		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE) ) );
+	}
+	
+	int WatchPoint::read_fault(int target_addr, int target_size) {
+		return (general_fault (target_addr, target_size, WA_READ) );
+	}
+	
+	int WatchPoint::write_fault(int target_addr, int target_size) {
+		return (general_fault (target_addr, target_size, WA_WRITE) );
+	}
 }
 
 /*
