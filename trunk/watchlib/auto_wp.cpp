@@ -1,10 +1,10 @@
 
 //#define	WA_EXEC			4
 //#define	WA_TRAPAFTER	8
-
-#include <vector>
+#include "auto_wp.h"
+//#include <vector>
 #include <iostream>
-
+/*
 namespace {
 	#define	WA_READ			1
 	#define	WA_WRITE		2
@@ -15,11 +15,13 @@ namespace {
 		int flags;
 	};
 }
+*/
 
 using std::cout;
 using std::endl;
 using std::vector;
 
+/*
 namespace Hongyi_WatchPoint {
 	class WatchPoint {
 	public:
@@ -28,24 +30,28 @@ namespace Hongyi_WatchPoint {
 		WatchPoint(int target_addr, int target_size, int target_flags);
 		WatchPoint(const WatchPoint& parameter);
 
-		void add_watchpoint (int target_addr, int target_size, int target_flags);
+		
 		void add_read_wp (int target_addr, int target_size);
 		void add_write_wp (int target_addr, int target_size);
 		
 		void rm_watchpoint (int target_addr, int target_size);
 		
-//		void add_byte(int target_addr, int target_flags);
-//		void add_range(int target_addr, int target_size, int target_flags);
-
-//		void rm_byte(int target_addr);
-//		void rm_range(int target_addr);
-
-//		void watch_fault(int target_addr, int target_size, int target_flags);
+		int watch_fault (int target_addr, int target_size);
+		//return: The number of how many watchpoints it touches within the range, regardless what kind of flags the watchpoint has.
+		int read_fault(int target_addr, int target_size);
+		//return: The number of how many *read* watchpoints it touches within the range.
+		int write_fault(int target_addr, int target_size);
+		//return: The number of how many *write* watchpoints it touches within the range.
+		
 		void watch_print();
+		
+		void add_watchpoint (int target_addr, int target_size, int target_flags);
+		int general_fault (int target_addr, int target_size, int target_flags);
 	private:
 		vector<watchpoint_t> wp;
 	};
 }
+*/
 
 namespace {
 	vector<watchpoint_t>::iterator search_address(int target_addr, vector<watchpoint_t>& wp) {
@@ -394,8 +400,25 @@ namespace Hongyi_WatchPoint{
 		}
 		return;
 	}
+	
+	int WatchPoint::general_fault (int target_addr, int target_size, int target_flags) {
+		if (target_size == 0)
+			return 0;
+		vector<watchpoint_t>::iterator iter;
+		iter = search_address(target_addr, wp);
+		if (iter == wp.end() )
+			return 0;
+		int fault_num = 0;
+		while (iter->addr < target_addr + target_size) {
+			if (flag_inclusion (iter->flags, target_flags) )
+				fault_num++;
+			iter++;
+		}
+		return fault_num;
+	}		
 }
 
+/*
 int main() {
 	using namespace Hongyi_WatchPoint;
 	int target_addr;
@@ -430,14 +453,15 @@ int main() {
 
 	watch.watch_print();
 
-	target_addr = 17;
+	target_addr = 15;
 	target_size = 10;
-	watch.rm_watchpoint(target_addr, target_size);
-//	target_flags = WA_READ;
-//	watch.add_watchpoint (target_addr, target_size, target_flags);
+	target_flags = WA_READ + WA_WRITE;
+	int num = watch.general_fault (target_addr, target_size, target_flags);
 
-	cout << endl << endl << "**Here is what after the remove" << endl;
-	watch.watch_print();
+	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
+	cout << num << endl;
 
 	return 0;
 }
+*/
+
