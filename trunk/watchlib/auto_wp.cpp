@@ -1,10 +1,11 @@
+#ifndef VECTOR_H
+#include <vector>
+#define VECTOR_H
+#endif
 
-//#define	WA_EXEC			4
-//#define	WA_TRAPAFTER	8
-#include "auto_wp.h"
-//#include <vector>
+//#include "auto_wp.h"
 #include <iostream>
-/*
+
 namespace {
 	#define	WA_READ			1
 	#define	WA_WRITE		2
@@ -15,13 +16,13 @@ namespace {
 		int flags;
 	};
 }
-*/
+
 
 using std::cout;
 using std::endl;
 using std::vector;
 
-/*
+
 namespace Hongyi_WatchPoint {
 	class WatchPoint {
 	public:
@@ -34,7 +35,7 @@ namespace Hongyi_WatchPoint {
 		void add_read_wp (int target_addr, int target_size);
 		void add_write_wp (int target_addr, int target_size);
 		
-		void rm_watchpoint (int target_addr, int target_size);
+		void rm_watchpoint (int target_addr, int target_size, int target_flags);
 		
 		int watch_fault (int target_addr, int target_size);
 		//return: The number of how many watchpoints it touches within the range, regardless what kind of flags the watchpoint has.
@@ -51,7 +52,7 @@ namespace Hongyi_WatchPoint {
 		vector<watchpoint_t> wp;
 	};
 }
-*/
+
 
 namespace {
 	vector<watchpoint_t>::iterator search_address(int target_addr, vector<watchpoint_t>& wp) {
@@ -357,43 +358,110 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	void WatchPoint::rm_watchpoint (int target_addr, int target_size) {
+	void WatchPoint::rm_watchpoint (int target_addr, int target_size, int target_flags) {
 		if (target_size == 0)
 			return;
 		vector<watchpoint_t>::iterator iter;
+		vector<watchpoint_t>::iterator previous_iter;
 		//starting part
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
 			return;
 		if (addr_covered(target_addr - 1, (*iter) ) ) {
 			if (target_addr + target_size < iter->addr + iter->size) {
-				watchpoint_t insert_t = {iter->addr, target_addr - iter->addr, iter->flags};
-				iter->size = iter->addr + iter->size - target_addr - target_size;
-				iter->addr = target_addr + target_size;
-				wp.insert(iter, insert_t);
+				if (target_flags & iter->flags) {
+					watchpoint_t insert_t = {iter->addr, target_addr - iter->addr, iter->flags};
+					iter->size = iter->addr + iter->size - target_addr - target_size;
+					iter->addr = target_addr + target_size;
+					iter = wp.insert(iter, insert_t);
+					insert_t.flags = iter->flags & (~target_flags);
+					if (insert_t.flags) {
+						insert_t.addr = target_addr;
+						insert_t.size = target_size;
+						iter++;
+						wp.insert(iter, insert_t);
+					}
+				}
 				return;
 			}
-			iter->size = target_addr - iter->addr;
-			iter++;
+			if (target_flags & iter->flags) {
+				watchpoint_t insert_t = {target_addr, iter->addr + iter->size - target_addr, iter->flags & (~target_flags)};
+				iter->size = target_addr - iter->addr;
+				iter++;
+				if (insert_t.flags) {
+					iter = wp.insert(iter, insert_t);
+					iter++;
+				}
+			}
 		}
-		else {
-			if (target_addr + target_size < iter->addr + iter->size) {
+		else if (target_addr + target_size < iter->addr + iter->size) {
+			if (iter->flags & target_flags) {
+				watchpoint_t insert_t = {iter->addr, target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
 				iter->size = iter->addr + iter->size - target_addr - target_size;
 				iter->addr = target_addr + target_size;
-				return;
+				if (insert_t.flags) {
+					previous_iter = iter - 1;
+					if (previous_iter->addr + previous_iter->size == insert_t.addr && previous_iter->flags == insert_t.flags)
+						previous_iter->size += insert_t.size;
+					else {
+						iter = wp.insert(iter, insert_t);
+						iter++;
+					}
+				}
 			}
-			iter = wp.erase(iter);
+			return;
 		}
 
 		//iterating part		
-		while (iter != wp.end() && iter->addr + iter->size < target_addr + target_size)
-			iter = wp.erase(iter);
-
+		while (iter != wp.end() && iter->addr + iter->size < target_addr + target_size) {
+			if (iter->flags & target_flags) {
+				iter->flags = iter->flags & (~target_flags);
+				if (iter->flags) {
+					previous_iter = iter - 1;
+					if (previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
+						previous_iter->size += iter->size;
+						iter = wp.erase(iter);
+					}
+					else
+						iter++;
+				}
+				else
+					iter = wp.erase(iter);
+			}
+			else
+				iter++;
+		iter++;
+		}
+		
 		//ending part
-		if (iter != wp.end() && addr_covered( (target_addr + target_size - 1), (*iter) ) ) {
-			if (target_addr + target_size == iter->addr + iter->size)
-				wp.erase(iter);
+		if (iter != wp.end() && addr_covered( (target_addr + target_size - 1), (*iter) ) && iter->flags & target_flags) {
+			if (target_addr + target_size == iter->addr + iter->size) {
+				iter->flags = iter->flags & (~target_flags);
+				if (iter->flags) {
+					previous_iter = iter - 1;
+					if (previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
+						previous_iter->size += iter->size;
+				 		iter = wp.erase(iter);
+				 		if (iter != wp.end() && previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
+				 			previous_iter->size += iter->size;
+				 			wp.erase(iter);
+				 		}
+				 	}
+				}
+				else
+					wp.erase(iter);
+			}
 			else {
+				watchpoint_t insert_t = {iter->addr , target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
+				if (insert_t.flags) {
+					previous_iter = iter - 1;
+					if (previous_iter->addr + previous_iter->size == insert_t.addr && previous_iter->flags == insert_t.flags)
+						previous_iter->size += insert_t.size;
+					else {
+						iter = wp.insert(iter, insert_t);
+						iter++;
+					}
+				}
 				iter->size = iter->addr + iter->size - target_addr - target_size;
 				iter->addr = target_addr + target_size;
 			}
@@ -410,7 +478,7 @@ namespace Hongyi_WatchPoint{
 			return 0;
 		int fault_num = 0;
 		while (iter->addr < target_addr + target_size) {
-			if (flag_inclusion (iter->flags, target_flags) )
+			if (iter->flags & target_flags)
 				fault_num++;
 			iter++;
 		}
@@ -430,7 +498,6 @@ namespace Hongyi_WatchPoint{
 	}
 }
 
-/*
 int main() {
 	using namespace Hongyi_WatchPoint;
 	int target_addr;
@@ -465,15 +532,17 @@ int main() {
 
 	watch.watch_print();
 
-	target_addr = 15;
-	target_size = 10;
-	target_flags = WA_READ + WA_WRITE;
-	int num = watch.general_fault (target_addr, target_size, target_flags);
+	target_addr = 19;
+	target_size = 1;
+	target_flags = WA_READ;
+	watch.rm_watchpoint (target_addr, target_size, target_flags);
 
-	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
-	cout << num << endl;
+	cout << "**I've removed the watchpoint**" << endl;
+	watch.watch_print();
+//	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
+//	cout << num << endl;
 
 	return 0;
 }
-*/
+
 
