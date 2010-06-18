@@ -442,10 +442,6 @@ namespace Hongyi_WatchPoint{
 					if (previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
 						previous_iter->size += iter->size;
 				 		iter = wp.erase(iter);
-				 		if (iter != wp.end() && previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
-				 			previous_iter->size += iter->size;
-				 			wp.erase(iter);
-				 		}
 				 	}
 				}
 				else
@@ -466,6 +462,11 @@ namespace Hongyi_WatchPoint{
 				iter->addr = target_addr + target_size;
 			}
 		}
+		previous_iter = iter - 1;
+		if (iter != wp.end() && previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
+ 			previous_iter->size += iter->size;
+ 			iter = wp.erase(iter);
+ 		}
 		return;
 	}
 	
@@ -505,7 +506,8 @@ int main() {
 	int target_flags;
 	WatchPoint watch;
 	int i;
-	
+
+/*	
 	//Adding the front wp
 	target_addr = 15;
 	target_size = 5;
@@ -529,14 +531,40 @@ int main() {
 	target_flags = WA_WRITE;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	cout << endl << "I've added the front and end watch points" << endl;
+*/
+
+	target_addr = 0;
+	target_size = 100;
+	target_flags = WA_READ | WA_WRITE;
+	watch.add_watchpoint (target_addr, target_size, target_flags);
 
 	watch.watch_print();
 
-	target_addr = 19;
-	target_size = 1;
+	target_addr = 30;
+	target_size = 10;
 	target_flags = WA_READ;
 	watch.rm_watchpoint (target_addr, target_size, target_flags);
-
+	
+	target_addr = 25;
+	target_size = 5;
+	target_flags = WA_READ;
+	watch.rm_watchpoint (target_addr, target_size, target_flags);
+	
+	target_addr = 40;
+	target_size = 5;
+	target_flags = WA_READ;
+	watch.rm_watchpoint (target_addr, target_size, target_flags);
+	
+	target_addr = 20;
+	target_size = 10;
+	target_flags = WA_READ;
+	watch.rm_watchpoint (target_addr, target_size, target_flags);
+	
+	target_addr = 40;
+	target_size = 10;
+	target_flags = WA_WRITE;
+	watch.rm_watchpoint (target_addr, target_size, target_flags);
+	
 	cout << "**I've removed the watchpoint**" << endl;
 	watch.watch_print();
 //	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
