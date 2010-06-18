@@ -3,9 +3,10 @@
 #define DEQUE_H
 #endif
 
-//#include "auto_wp.h"
+#include "auto_wp.h"
 #include <iostream>
 
+/*
 namespace {
 	#define	WA_READ			1
 	#define	WA_WRITE		2
@@ -16,13 +17,13 @@ namespace {
 		int flags;
 	};
 }
-
+*/
 
 using std::cout;
 using std::endl;
 using std::deque;
 
-
+/*
 namespace Hongyi_WatchPoint {
 	class WatchPoint {
 	public:
@@ -55,7 +56,7 @@ namespace Hongyi_WatchPoint {
 		deque<watchpoint_t> wp;
 	};
 }
-
+*/
 
 namespace {
 	deque<watchpoint_t>::iterator search_address(int target_addr, deque<watchpoint_t>& wp) {
@@ -518,6 +519,7 @@ namespace Hongyi_WatchPoint{
 	}
 }
 
+/*
 int main() {
 	using namespace Hongyi_WatchPoint;
 	int target_addr;
@@ -526,7 +528,7 @@ int main() {
 	WatchPoint watch;
 	int i;
 
-/*	
+
 	//Adding the front wp
 	target_addr = 15;
 	target_size = 5;
@@ -550,7 +552,7 @@ int main() {
 	target_flags = WA_WRITE;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	cout << endl << "I've added the front and end watch points" << endl;
-*/
+
 
 	target_addr = 0;
 	target_size = 100;
@@ -591,5 +593,5 @@ int main() {
 
 	return 0;
 }
-
+*/
 

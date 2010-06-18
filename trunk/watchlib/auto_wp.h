@@ -6,9 +6,9 @@
 //													//
 //													//
 //////////////////////////////////////////////////////
-#ifndef VECTOR_H
-#include <vector>
-#define VECTOR_H
+#ifndef DEQUE_H
+#include <deque>
+#define DEQUE_H
 #endif
 
 namespace {
@@ -22,7 +22,7 @@ namespace {
 	};
 }
 
-using std::vector;
+using std::deque;
 
 namespace Hongyi_WatchPoint {
 	class WatchPoint {
@@ -33,24 +33,27 @@ namespace Hongyi_WatchPoint {
 		WatchPoint(const WatchPoint& parameter);
 
 		
-		void add_read_wp (int target_addr, int target_size);
-		void add_write_wp (int target_addr, int target_size);
+		void	add_read_wp		(int target_addr, int target_size);
+		void	add_write_wp	(int target_addr, int target_size);
 		
-		void rm_watchpoint (int target_addr, int target_size);
+		void	rm_watch	(int target_addr, int target_size);
+		void	rm_read		(int target_addr, int target_size);
+		void	rm_write	(int target_addr, int target_size);
 		
-		int watch_fault (int target_addr, int target_size);
+		int		watch_fault	(int target_addr, int target_size);
 		//return: The number of how many watchpoints it touches within the range, regardless what kind of flags the watchpoint has.
-		int read_fault(int target_addr, int target_size);
+		int		read_fault	(int target_addr, int target_size);
 		//return: The number of how many *read* watchpoints it touches within the range.
-		int write_fault(int target_addr, int target_size);
+		int		write_fault	(int target_addr, int target_size);
 		//return: The number of how many *write* watchpoints it touches within the range.
 		
-		void watch_print();
+		void	watch_print();
 		
+		void rm_watchpoint (int target_addr, int target_size, int target_flags);
 		void add_watchpoint (int target_addr, int target_size, int target_flags);
 		int general_fault (int target_addr, int target_size, int target_flags);
 	private:
-		vector<watchpoint_t> wp;
+		deque<watchpoint_t> wp;
 	};
 }
 
