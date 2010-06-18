@@ -1,6 +1,6 @@
-#ifndef VECTOR_H
-#include <vector>
-#define VECTOR_H
+#ifndef DEQUE_H
+#include <deque>
+#define DEQUE_H
 #endif
 
 //#include "auto_wp.h"
@@ -20,7 +20,7 @@ namespace {
 
 using std::cout;
 using std::endl;
-using std::vector;
+using std::deque;
 
 
 namespace Hongyi_WatchPoint {
@@ -32,31 +32,34 @@ namespace Hongyi_WatchPoint {
 		WatchPoint(const WatchPoint& parameter);
 
 		
-		void add_read_wp (int target_addr, int target_size);
-		void add_write_wp (int target_addr, int target_size);
+		void	add_read_wp		(int target_addr, int target_size);
+		void	add_write_wp	(int target_addr, int target_size);
 		
-		void rm_watchpoint (int target_addr, int target_size, int target_flags);
+		void	rm_watch	(int target_addr, int target_size);
+		void	rm_read		(int target_addr, int target_size);
+		void	rm_write	(int target_addr, int target_size);
 		
-		int watch_fault (int target_addr, int target_size);
+		int		watch_fault	(int target_addr, int target_size);
 		//return: The number of how many watchpoints it touches within the range, regardless what kind of flags the watchpoint has.
-		int read_fault(int target_addr, int target_size);
+		int		read_fault	(int target_addr, int target_size);
 		//return: The number of how many *read* watchpoints it touches within the range.
-		int write_fault(int target_addr, int target_size);
+		int		write_fault	(int target_addr, int target_size);
 		//return: The number of how many *write* watchpoints it touches within the range.
 		
-		void watch_print();
+		void	watch_print();
 		
+		void rm_watchpoint (int target_addr, int target_size, int target_flags);
 		void add_watchpoint (int target_addr, int target_size, int target_flags);
 		int general_fault (int target_addr, int target_size, int target_flags);
 	private:
-		vector<watchpoint_t> wp;
+		deque<watchpoint_t> wp;
 	};
 }
 
 
 namespace {
-	vector<watchpoint_t>::iterator search_address(int target_addr, vector<watchpoint_t>& wp) {
-		vector<watchpoint_t>::iterator iter;
+	deque<watchpoint_t>::iterator search_address(int target_addr, deque<watchpoint_t>& wp) {
+		deque<watchpoint_t>::iterator iter;
 		for (iter = wp.begin(); iter != wp.end(); iter++) {
 			if(iter->addr > target_addr || iter->addr + iter->size > target_addr)
 				break;
@@ -119,8 +122,8 @@ namespace Hongyi_WatchPoint{
 		if (target_size == 0)
 			return;
 		watchpoint_t insert_t = {0, 0, 0};
-		vector<watchpoint_t>::iterator iter;
-		vector<watchpoint_t>::iterator start_iter;//This one is used only for merging the front wp nodes.
+		deque<watchpoint_t>::iterator iter;
+		deque<watchpoint_t>::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
 		if (iter == wp.end() ) {
@@ -273,7 +276,7 @@ namespace Hongyi_WatchPoint{
 		}
 		
 		//Ending part
-		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {//If it's the end of the vector or the end+1 address is not covered by any wp
+		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {//If it's the end of the deque or the end+1 address is not covered by any wp
 			//Then we simply add the watchpoint on it.
 			if (target_addr + target_size > insert_t.addr + insert_t.size) {//If there is still some blank between insert_t and the end of the adding address.
 				if (insert_t.flags == target_flags) {//if the insert node's flag matches the output node, then we just enlarge the insert node.
@@ -361,8 +364,8 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint::rm_watchpoint (int target_addr, int target_size, int target_flags) {
 		if (target_size == 0)
 			return;
-		vector<watchpoint_t>::iterator iter;
-		vector<watchpoint_t>::iterator previous_iter;
+		deque<watchpoint_t>::iterator iter;
+		deque<watchpoint_t>::iterator previous_iter;
 		//starting part
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
@@ -470,10 +473,26 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
+	void WatchPoint::rm_watch (int target_addr, int target_size) {
+		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
+		return;
+	}
+	
+	void WatchPoint::rm_read (int target_addr, int target_size) {
+		rm_watchpoint (target_addr, target_size, WA_READ);
+		return;
+	}
+	
+	void WatchPoint::rm_write (int target_addr, int target_size) {
+		rm_watchpoint (target_addr, target_size, WA_WRITE);
+		return;
+	}
+	
+	
 	int WatchPoint::general_fault (int target_addr, int target_size, int target_flags) {
 		if (target_size == 0)
 			return 0;
-		vector<watchpoint_t>::iterator iter;
+		deque<watchpoint_t>::iterator iter;
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
 			return 0;
