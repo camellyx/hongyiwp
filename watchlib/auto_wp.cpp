@@ -1,6 +1,6 @@
-#ifndef DEQUE_H
+#ifndef deque_H
 #include <deque>
-#define DEQUE_H
+#define deque_H
 #endif
 
 #include "auto_wp.h"
@@ -22,6 +22,8 @@ namespace {
 using std::cout;
 using std::endl;
 using std::deque;
+using Hongyi_WatchPoint::watchpoint_t;
+using std::distance;
 
 /*
 namespace Hongyi_WatchPoint {
@@ -59,36 +61,73 @@ namespace Hongyi_WatchPoint {
 */
 
 namespace {
-	deque<watchpoint_t>::iterator search_address(int target_addr, deque<watchpoint_t>& wp) {
-		deque<watchpoint_t>::iterator iter;
-		for (iter = wp.begin(); iter != wp.end(); iter++) {
-			if(iter->addr > target_addr || iter->addr + iter->size > target_addr)
-				break;
-		}
-		return iter;
-	}	
-	
-	bool addr_covered (int target_addr, const watchpoint_t& node) {
+	bool addr_covered (unsigned int target_addr, const watchpoint_t& node);
+	bool flag_inclusion (unsigned int target_flags, unsigned int container_flags);
+	deque<watchpoint_t>::iterator search_address(unsigned int target_addr, deque<watchpoint_t>& wp);
+
+	bool addr_covered (unsigned int target_addr, const watchpoint_t& node) {
 		return (target_addr >= node.addr && target_addr < node.addr + node.size);
 	}
 	
-	bool flag_inclusion (int target_flags, int container_flags) {
+	bool flag_inclusion (unsigned int target_flags, unsigned int container_flags) {
 		return ( ( (target_flags ^ container_flags) & container_flags) == (target_flags ^ container_flags) );
+	}
+	
+	deque<watchpoint_t>::iterator search_address(unsigned int target_addr, deque<watchpoint_t>& wp) {
+		int size = wp.size();
+		if (size == 0)
+			return wp.end();
+		bool find = false;
+		deque<watchpoint_t>::iterator beg, end, mid;
+		beg = wp.begin();
+		end = wp.end() - 1;
+		
+		if (end->addr < target_addr)
+			return wp.end();
+		if (beg->addr > target_addr)
+			return wp.begin();
+			
+		mid = beg + size / 2;
+		find = addr_covered (target_addr, *mid);
+		while(beg < end && !find) {
+			
+			if (target_addr < mid->addr) {
+				end = mid - 1;
+				size = size / 2;
+				mid = beg + size / 2;
+			}
+			else {
+				if (size % 2)
+					beg = mid + 1;
+				else
+					beg = mid;
+				size = size / 2;
+				mid = beg + size / 2;
+			}
+			
+			find = addr_covered(target_addr, *mid);
+		}
+		
+		if (find || target_addr < mid->addr)
+			return mid;
+		else
+			return mid + 1;
 	}
 }
 		
 
 namespace Hongyi_WatchPoint{
+
 	WatchPoint::WatchPoint() {
 	}
 	
-	WatchPoint::WatchPoint(int target_addr, int target_size, int target_flags) {
+	WatchPoint::WatchPoint(unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
 		watchpoint_t temp = {target_addr, target_size, target_flags};
 		wp.push_back(temp);
 	}
 	
 	WatchPoint::WatchPoint(const WatchPoint& parameter) {
-		wp.resize(parameter.wp.size());
+		wp.resize((int)parameter.wp.size());
 		int i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
@@ -98,7 +137,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint::watch_print() {
 		int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
-		for (i = 0; i < wp.size(); i++) {
+		for (i = 0; i < (int)wp.size(); i++) {
 			cout << "This is the " << i << "th watchpoint." <<endl;
 			cout << "The watchpoint is at " << wp[i].addr << endl;
 			cout << "The watchpoint has a size of " << wp[i].size << endl;
@@ -109,17 +148,17 @@ namespace Hongyi_WatchPoint{
 		}
 	}
 	
-	void WatchPoint::add_read_wp (int target_addr, int target_size) {
+	void WatchPoint::add_read_wp (unsigned int target_addr, unsigned int target_size) {
 		add_watchpoint (target_addr, target_size, WA_READ);
 		return;
 	}
 	
-	void WatchPoint::add_write_wp (int target_addr, int target_size) {
+	void WatchPoint::add_write_wp (unsigned int target_addr, unsigned int target_size) {
 		add_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
 	
-	void WatchPoint::add_watchpoint(int target_addr, int target_size, int target_flags) {
+	void WatchPoint::add_watchpoint(unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
 		if (target_size == 0)
 			return;
 		watchpoint_t insert_t = {0, 0, 0};
@@ -128,7 +167,7 @@ namespace Hongyi_WatchPoint{
 		iter = search_address(target_addr, wp);
 		
 		if (iter == wp.end() ) {
-			if (iter != wp.begin() ) {//We'll need to check if there is some wp ahead of iter and if there is we need to decide whether merge the two.
+			if (iter != wp.begin() ) {//We'll need to check if there is some wp ahead of iter and if there is then we need to decide whether merge the two.
 				start_iter = iter - 1;
 				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {//Merge condition.
 					start_iter->size = start_iter->size + target_size;//Merge by enlarging the former wp node.
@@ -362,7 +401,7 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	void WatchPoint::rm_watchpoint (int target_addr, int target_size, int target_flags) {
+	void WatchPoint::rm_watchpoint (unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
 		if (target_size == 0)
 			return;
 		deque<watchpoint_t>::iterator iter;
@@ -474,30 +513,30 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	void WatchPoint::rm_watch (int target_addr, int target_size) {
+	void WatchPoint::rm_watch (unsigned int target_addr, unsigned int target_size) {
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
 		return;
 	}
 	
-	void WatchPoint::rm_read (int target_addr, int target_size) {
+	void WatchPoint::rm_read (unsigned int target_addr, unsigned int target_size) {
 		rm_watchpoint (target_addr, target_size, WA_READ);
 		return;
 	}
 	
-	void WatchPoint::rm_write (int target_addr, int target_size) {
+	void WatchPoint::rm_write (unsigned int target_addr, unsigned int target_size) {
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
 	
 	
-	int WatchPoint::general_fault (int target_addr, int target_size, int target_flags) {
+	unsigned  WatchPoint::general_fault (unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
 		if (target_size == 0)
 			return 0;
 		deque<watchpoint_t>::iterator iter;
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
 			return 0;
-		int fault_num = 0;
+		unsigned int fault_num = 0;
 		while (iter->addr < target_addr + target_size) {
 			if (iter->flags & target_flags)
 				fault_num++;
@@ -506,15 +545,15 @@ namespace Hongyi_WatchPoint{
 		return fault_num;
 	}
 	
-	int WatchPoint::watch_fault(int target_addr, int target_size) {
+	unsigned int WatchPoint::watch_fault(unsigned int target_addr, unsigned int target_size) {
 		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE) ) );
 	}
 	
-	int WatchPoint::read_fault(int target_addr, int target_size) {
+	unsigned int WatchPoint::read_fault(unsigned int target_addr, unsigned int target_size) {
 		return (general_fault (target_addr, target_size, WA_READ) );
 	}
 	
-	int WatchPoint::write_fault(int target_addr, int target_size) {
+	unsigned int WatchPoint::write_fault(unsigned int target_addr, unsigned int target_size) {
 		return (general_fault (target_addr, target_size, WA_WRITE) );
 	}
 }
