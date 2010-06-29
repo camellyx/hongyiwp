@@ -1,17 +1,17 @@
-#ifndef deque_H
+#ifndef WP_H
 #include <deque>
-#define deque_H
+#include <iostream>
+#define WP_H
 #endif
 
 #include "auto_wp.h"
-#include <iostream>
 
 /*
 namespace {
 	#define	WA_READ			1
 	#define	WA_WRITE		2
 	
-	struct watchpoint_t {
+	struct watchpoint_t<ADDRESS, FLAGS> {
 		int addr;
 		int size;
 		int flags;
@@ -23,7 +23,6 @@ using std::cout;
 using std::endl;
 using std::deque;
 using Hongyi_WatchPoint::watchpoint_t;
-using std::distance;
 
 /*
 namespace Hongyi_WatchPoint {
@@ -55,30 +54,38 @@ namespace Hongyi_WatchPoint {
 		void add_watchpoint (int target_addr, int target_size, int target_flags);
 		int general_fault (int target_addr, int target_size, int target_flags);
 	private:
-		deque<watchpoint_t> wp;
+		deque<watchpoint_t<ADDRESS, FLAGS> > wp;
 	};
 }
 */
 
 namespace {
-	bool addr_covered (unsigned int target_addr, const watchpoint_t& node);
-	bool flag_inclusion (unsigned int target_flags, unsigned int container_flags);
-	deque<watchpoint_t>::iterator search_address(unsigned int target_addr, deque<watchpoint_t>& wp);
+	template<class ADDRESS, class FLAGS>
+	bool addr_covered (ADDRESS target_addr, const watchpoint_t<ADDRESS, FLAGS>& node);
+	
+	template<class FLAGS>
+	bool flag_inclusion (FLAGS target_flags, FLAGS container_flags);
+	
+	template<class ADDRESS, class FLAGS>
+	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator search_address(ADDRESS target_addr, deque<watchpoint_t<ADDRESS, FLAGS> >& wp);
 
-	bool addr_covered (unsigned int target_addr, const watchpoint_t& node) {
+	template<class ADDRESS, class FLAGS>
+	bool addr_covered (ADDRESS target_addr, const watchpoint_t<ADDRESS, FLAGS>& node) {
 		return (target_addr >= node.addr && target_addr < node.addr + node.size);
 	}
 	
-	bool flag_inclusion (unsigned int target_flags, unsigned int container_flags) {
+	template <class FLAGS>
+	bool flag_inclusion (FLAGS target_flags, FLAGS container_flags) {
 		return ( ( (target_flags ^ container_flags) & container_flags) == (target_flags ^ container_flags) );
 	}
 	
-	deque<watchpoint_t>::iterator search_address(unsigned int target_addr, deque<watchpoint_t>& wp) {
+	template <class ADDRESS, class FLAGS>
+	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator search_address(ADDRESS target_addr, deque<watchpoint_t<ADDRESS, FLAGS> >& wp) {
 		int size = wp.size();
 		if (size == 0)
 			return wp.end();
 		bool find = false;
-		deque<watchpoint_t>::iterator beg, end, mid;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg, end, mid;
 		beg = wp.begin();
 		end = wp.end() - 1;
 		
@@ -117,16 +124,19 @@ namespace {
 		
 
 namespace Hongyi_WatchPoint{
-
-	WatchPoint::WatchPoint() {
+	
+	template <class ADDRESS, class COUNT, class FLAGS>
+	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint() {
 	}
 	
-	WatchPoint::WatchPoint(unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
-		watchpoint_t temp = {target_addr, target_size, target_flags};
+	template <class ADDRESS, class COUNT, class FLAGS>
+	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
+		watchpoint_t<ADDRESS, FLAGS> temp = {target_addr, target_size, target_flags};
 		wp.push_back(temp);
 	}
 	
-	WatchPoint::WatchPoint(const WatchPoint& parameter) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint(const WatchPoint& parameter) {
 		wp.resize((int)parameter.wp.size());
 		int i;
 		for (i = 0; i < parameter.wp.size(); i++) {
@@ -134,7 +144,8 @@ namespace Hongyi_WatchPoint{
 		}
 	}
 	
-	void WatchPoint::watch_print() {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::watch_print() {
 		int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
@@ -148,22 +159,25 @@ namespace Hongyi_WatchPoint{
 		}
 	}
 	
-	void WatchPoint::add_read_wp (unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_read_wp (ADDRESS target_addr, ADDRESS target_size) {
 		add_watchpoint (target_addr, target_size, WA_READ);
 		return;
 	}
 	
-	void WatchPoint::add_write_wp (unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_write_wp (ADDRESS target_addr, ADDRESS target_size) {
 		add_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
 	
-	void WatchPoint::add_watchpoint(unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
 			return;
-		watchpoint_t insert_t = {0, 0, 0};
-		deque<watchpoint_t>::iterator iter;
-		deque<watchpoint_t>::iterator start_iter;//This one is used only for merging the front wp nodes.
+		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
 		if (iter == wp.end() ) {
@@ -401,11 +415,12 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	void WatchPoint::rm_watchpoint (unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
 			return;
-		deque<watchpoint_t>::iterator iter;
-		deque<watchpoint_t>::iterator previous_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator previous_iter;
 		//starting part
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
@@ -413,7 +428,7 @@ namespace Hongyi_WatchPoint{
 		if (addr_covered(target_addr - 1, (*iter) ) ) {
 			if (target_addr + target_size < iter->addr + iter->size) {
 				if (target_flags & iter->flags) {
-					watchpoint_t insert_t = {iter->addr, target_addr - iter->addr, iter->flags};
+					watchpoint_t<ADDRESS, FLAGS> insert_t = {iter->addr, target_addr - iter->addr, iter->flags};
 					iter->size = iter->addr + iter->size - target_addr - target_size;
 					iter->addr = target_addr + target_size;
 					iter = wp.insert(iter, insert_t);
@@ -428,7 +443,7 @@ namespace Hongyi_WatchPoint{
 				return;
 			}
 			if (target_flags & iter->flags) {
-				watchpoint_t insert_t = {target_addr, iter->addr + iter->size - target_addr, iter->flags & (~target_flags)};
+				watchpoint_t<ADDRESS, FLAGS> insert_t = {target_addr, iter->addr + iter->size - target_addr, iter->flags & (~target_flags)};
 				iter->size = target_addr - iter->addr;
 				iter++;
 				if (insert_t.flags) {
@@ -439,7 +454,7 @@ namespace Hongyi_WatchPoint{
 		}
 		else if (target_addr + target_size < iter->addr + iter->size) {
 			if (iter->flags & target_flags) {
-				watchpoint_t insert_t = {iter->addr, target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
+				watchpoint_t<ADDRESS, FLAGS> insert_t = {iter->addr, target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
 				iter->size = iter->addr + iter->size - target_addr - target_size;
 				iter->addr = target_addr + target_size;
 				if (insert_t.flags) {
@@ -491,7 +506,7 @@ namespace Hongyi_WatchPoint{
 					wp.erase(iter);
 			}
 			else {
-				watchpoint_t insert_t = {iter->addr , target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
+				watchpoint_t<ADDRESS, FLAGS> insert_t = {iter->addr , target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
 				if (insert_t.flags) {
 					previous_iter = iter - 1;
 					if (previous_iter->addr + previous_iter->size == insert_t.addr && previous_iter->flags == insert_t.flags)
@@ -513,30 +528,33 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	void WatchPoint::rm_watch (unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_watch (ADDRESS target_addr, ADDRESS target_size) {
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
 		return;
 	}
 	
-	void WatchPoint::rm_read (unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_read (ADDRESS target_addr, ADDRESS target_size) {
 		rm_watchpoint (target_addr, target_size, WA_READ);
 		return;
 	}
 	
-	void WatchPoint::rm_write (unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_write (ADDRESS target_addr, ADDRESS target_size) {
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
 	
-	
-	unsigned  WatchPoint::general_fault (unsigned int target_addr, unsigned int target_size, unsigned int target_flags) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
 			return 0;
-		deque<watchpoint_t>::iterator iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		iter = search_address(target_addr, wp);
 		if (iter == wp.end() )
 			return 0;
-		unsigned int fault_num = 0;
+		COUNT fault_num = 0;
 		while (iter->addr < target_addr + target_size) {
 			if (iter->flags & target_flags)
 				fault_num++;
@@ -545,28 +563,29 @@ namespace Hongyi_WatchPoint{
 		return fault_num;
 	}
 	
-	unsigned int WatchPoint::watch_fault(unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::watch_fault(ADDRESS target_addr, ADDRESS target_size) {
 		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE) ) );
 	}
 	
-	unsigned int WatchPoint::read_fault(unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::read_fault(ADDRESS target_addr, ADDRESS target_size) {
 		return (general_fault (target_addr, target_size, WA_READ) );
 	}
 	
-	unsigned int WatchPoint::write_fault(unsigned int target_addr, unsigned int target_size) {
+	template <class ADDRESS, class COUNT, class FLAGS>
+	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
 		return (general_fault (target_addr, target_size, WA_WRITE) );
 	}
 }
 
-/*
 int main() {
 	using namespace Hongyi_WatchPoint;
 	int target_addr;
 	int target_size;
 	int target_flags;
-	WatchPoint watch;
-	int i;
-
+	WatchPoint<int, int, int> watch;
+	unsigned int i;
 
 	//Adding the front wp
 	target_addr = 15;
@@ -581,56 +600,26 @@ int main() {
 	target_flags = WA_WRITE;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	
-	target_addr = 25;
+	target_addr = 26;
 	target_size = 5;
-	target_flags = WA_READ | WA_WRITE;
+	target_flags = WA_WRITE;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	
 	target_addr = 40;
 	target_size = 5;
-	target_flags = WA_WRITE;
+	target_flags = WA_READ;
 	watch.add_watchpoint (target_addr, target_size, target_flags);
 	cout << endl << "I've added the front and end watch points" << endl;
 
-
-	target_addr = 0;
-	target_size = 100;
-	target_flags = WA_READ | WA_WRITE;
-	watch.add_watchpoint (target_addr, target_size, target_flags);
-
 	watch.watch_print();
 
-	target_addr = 30;
-	target_size = 10;
-	target_flags = WA_READ;
-	watch.rm_watchpoint (target_addr, target_size, target_flags);
-	
-	target_addr = 25;
-	target_size = 5;
-	target_flags = WA_READ;
-	watch.rm_watchpoint (target_addr, target_size, target_flags);
-	
-	target_addr = 40;
-	target_size = 5;
-	target_flags = WA_READ;
-	watch.rm_watchpoint (target_addr, target_size, target_flags);
-	
-	target_addr = 20;
-	target_size = 10;
-	target_flags = WA_READ;
-	watch.rm_watchpoint (target_addr, target_size, target_flags);
-	
-	target_addr = 40;
+	target_addr = 15;
 	target_size = 10;
 	target_flags = WA_WRITE;
-	watch.rm_watchpoint (target_addr, target_size, target_flags);
-	
-	cout << "**I've removed the watchpoint**" << endl;
-	watch.watch_print();
-//	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
-//	cout << num << endl;
+	int num = watch.general_fault (target_addr, target_size, target_flags);
+
+	cout << endl << endl << "**How many wp from " << target_addr << " with size " << target_size << " fall into flags " << target_flags << ":" << endl;
+	cout << num << endl;
 
 	return 0;
 }
-*/
-
