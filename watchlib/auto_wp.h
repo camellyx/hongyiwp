@@ -27,9 +27,11 @@ namespace Hongyi_WatchPoint {
 		FLAGS flags;
 	};
 	
+	enum PAGE_HIT {TOP, MID, BOT};
+	
 //	deque<watchpoint_t>::iterator search_address(ADDRESS target_addr, deque<watchpoint_t>& wp);
 	
-	template<class ADDRESS, class COUNT, class FLAGS>
+	template<class ADDRESS, class FLAGS>
 	class WatchPoint {
 	public:
 		//Constructors
@@ -47,19 +49,34 @@ namespace Hongyi_WatchPoint {
 		void	rm_read		(ADDRESS target_addr, ADDRESS target_size);
 		void	rm_write	(ADDRESS target_addr, ADDRESS target_size);
 		
-		COUNT	watch_fault	(ADDRESS target_addr, ADDRESS target_size);
+		bool	watch_fault	(ADDRESS target_addr, ADDRESS target_size);
 		//return: The number of how many watchpoints it touches within the range, regardless what kind of flags the watchpoint has.
-		COUNT	read_fault	(ADDRESS target_addr, ADDRESS target_size);
+		bool	read_fault	(ADDRESS target_addr, ADDRESS target_size);
 		//return: The number of how many *read* watchpoints it touches within the range.
-		COUNT	write_fault	(ADDRESS target_addr, ADDRESS target_size);
+		bool	write_fault	(ADDRESS target_addr, ADDRESS target_size);
 		//return: The number of how many *write* watchpoints it touches within the range.
 		
 		void	watch_print();
 		
+		//all below are private
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
 		void add_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
-		COUNT general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
+		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page);
+		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
+		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
+
 		deque< watchpoint_t<ADDRESS, FLAGS> > wp;
+		
+		unsigned int top_hit;
+		unsigned int mid_hit;
+		unsigned int bot_hit;
+		
+		unsigned int top_change;
+		unsigned int mid_change;
+		unsigned int bot_change;
+		
+		unsigned int top_break;
+		unsigned int mid_break;
 	private:
 /*
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
@@ -138,36 +155,66 @@ namespace {
 
 namespace Hongyi_WatchPoint{
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint() {
+	template <class ADDRESS, class FLAGS>
+	WatchPoint<ADDRESS, FLAGS>::WatchPoint() {
+		top_hit = 0;
+		mid_hit = 0;
+		bot_hit = 0;
+		
+		top_change = 0;
+		mid_change = 0;
+		bot_change = 0;
+		
+		top_break = 0;
+		mid_break = 0;
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
+	template <class ADDRESS, class FLAGS>
+	WatchPoint<ADDRESS, FLAGS>::WatchPoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		watchpoint_t<ADDRESS, FLAGS> temp = {target_addr, target_size, target_flags};
 		wp.push_back(temp);
+		top_hit = 0;
+		mid_hit = 0;
+		bot_hit = 0;
+		
+		top_change = 0;
+		mid_change = 0;
+		bot_change = 0;
+		
+		top_break = 0;
+		mid_break = 0;
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	WatchPoint<ADDRESS, COUNT, FLAGS>::WatchPoint(const WatchPoint& parameter) {
+	template <class ADDRESS, class FLAGS>
+	WatchPoint<ADDRESS, FLAGS>::WatchPoint(const WatchPoint& parameter) {
 		wp.resize((int)parameter.wp.size());
 		int i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
 		}
+		top_hit = parameter.top_hit;
+		mid_hit = parameter.mid_hit;
+		bot_hit = parameter.bot_hit;
+		
+		top_change = top_change;
+		mid_change = mid_change;
+		bot_change = bot_change;
+		
+		top_break = top_break;
+		mid_break = mid_break;
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::clear() {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::clear() {
 		wp.clear();
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::watch_print() {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::watch_print() {
 		int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
@@ -181,27 +228,132 @@ namespace Hongyi_WatchPoint{
 		}
 		return;
 	}
+
+	template <class ADDRESS, class FLAGS>
+	PAGE_HIT WatchPoint<ADDRESS, FLAGS>::page_level (ADDRESS addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+		PAGE_HIT hit = TOP;
+		if (iter != wp.end() && addr_covered(addr, *iter) ) {
+			if (!addr_covered( (addr & ~(4095) ) , *iter) || !addr_covered( ( (addr + 4096) & ~(4095) , *iter) ) ) {
+				hit = BOT;
+				return hit;
+			}
+			else if (!addr_covered( (addr & ~(4194303) ) , *iter) || !addr_covered( ( (addr + 4194304) & ~(4194303) ) , *iter) )
+				hit = MID;
+		}
+		else {
+			if (iter != wp.end() && addr > (iter->addr & ~(4095) ) ) {
+				hit = BOT;
+				return hit;
+			}
+			else if (iter != wp.end() && addr > (iter->addr & ~(4194303) ) )
+				hit = MID;
+			
+			if (iter != wp.begin() ) {
+				iter--;
+				if (iter->addr + iter->size > addr & ~(4095) ) {
+					hit = BOT;
+					return hit;
+				}
+				if (iter->addr + iter->size > addr & ~(4194303) ) 
+					hit = MID;
+			}
+		}
+		return hit;
+	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_watch_wp (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::page_break (PAGE_HIT& before, PAGE_HIT& after) {
+		if (before == TOP && after != TOP)
+			top_break++;
+		else if (before == MID && after == BOT)
+			mid_break++;
+		return;
+	}
+		
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::add_watch_wp (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		add_watchpoint (target_addr, target_size, WA_READ | WA_WRITE);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
+		
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_read_wp (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::add_read_wp (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		add_watchpoint (target_addr, target_size, WA_READ);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_write_wp (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::add_write_wp (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		add_watchpoint (target_addr, target_size, WA_WRITE);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
 			return;
 		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
@@ -444,8 +596,8 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
 			return;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
@@ -557,54 +709,176 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_watch (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::rm_watch (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_read (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::rm_read (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		rm_watchpoint (target_addr, target_size, WA_READ);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	void WatchPoint<ADDRESS, COUNT, FLAGS>::rm_write (ADDRESS target_addr, ADDRESS target_size) {
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::rm_write (ADDRESS target_addr, ADDRESS target_size) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		PAGE_HIT begin_hit_before;
+		PAGE_HIT end_hit_before;
+		PAGE_HIT begin_hit_after;
+		PAGE_HIT end_hit_after;
+
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_before = page_level (target_addr, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_change, mid_change, bot_change);
+		
+		beg_iter = search_address(target_addr, wp);
+		end_iter = search_address(target_addr + target_size, wp);
+		begin_hit_after = page_level (target_addr, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		
+		page_break (begin_hit_before, begin_hit_after);
+		page_break (end_hit_before, end_hit_after);
 		return;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
+	template <class ADDRESS, class FLAGS>
+	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page) {
 		if (target_size == 0)
-			return 0;
+			return false;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		iter = search_address(target_addr, wp);
-		if (iter == wp.end() )
-			return 0;
-		COUNT fault_num = 0;
-		while (iter->addr < target_addr + target_size) {
-			if (iter->flags & target_flags)
-				fault_num++;
+		if (iter == wp.end() ) {
+			if (iter != wp.begin() ) {
+				iter--;
+				if (iter->addr + iter->size > (target_addr & ~(4095) ) )
+					bot_page++;
+				else if (iter->addr + iter->size > (target_addr & ~(4194303) ) )
+					mid_page++;
+				else
+					top_page++;
+			}
+			else
+				top_page++;
+			return false;
+		}
+		
+		bool wp_fault = false;
+		bool mid_level = false;
+		bool bot_level = false;
+		if(!addr_covered(target_addr, *iter) && iter !=wp.begin() ) {
+			iter--;
+			if (iter->addr + iter->size > (target_addr & ~(4095) ) )
+				bot_level = true;
+			else if (iter->addr + iter->size > target_addr & ~(4194303))
+				mid_level = true;
 			iter++;
 		}
-		return fault_num;
+		
+		ADDRESS beg_addr;
+		ADDRESS end_addr;
+		
+		while (iter != wp.end() && iter->addr < target_addr + target_size) {
+			if (iter->flags & target_flags)
+				wp_fault = true;
+			
+			if (iter->addr > target_addr || iter->addr >= (target_addr & ~(4095) ) )
+				beg_addr = iter->addr;
+			else if (iter->addr >= (target_addr & ~(4194303) ) )
+				beg_addr = target_addr & ~(4095);
+			else
+				beg_addr = target_addr & ~(4194303);
+				
+			if ( (iter->addr + iter->size <= target_addr + target_size) || iter->addr + iter->size <= ( (target_addr + target_size + 4095) & ~(4095) ) )
+				end_addr = iter->addr + iter->size;
+			else if ( iter->addr + iter->size <= ( (target_addr + target_size + 4194303) & ~(4194303) ) )
+				end_addr = (target_addr + target_size + 4095) & ~(4095);
+			else
+				end_addr = (target_addr + target_size + 4194303 & ~(4194303) );
+			
+			if (beg_addr & 4095 || end_addr & 4095)
+				bot_level = true;
+			else if (beg_addr & 4194303 || end_addr & 4095)
+				mid_level = true;
+			iter++;
+		}
+		
+		if (iter != wp.end() && iter->addr < (target_addr + target_size + 4095) & ~(4095) )
+			bot_level = true;
+		else if (iter != wp.end() && iter->addr < (target_addr + target_size + 4194303) & ~(4194303) )
+			mid_level = true;
+			
+		if (bot_level)
+			bot_page++;
+		else if (mid_level)
+			mid_page++;
+		else
+			top_page++;
+			
+		return wp_fault;
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::watch_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE) ) );
+	template <class ADDRESS, class FLAGS>
+	bool WatchPoint<ADDRESS, FLAGS>::watch_fault(ADDRESS target_addr, ADDRESS target_size) {
+		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE), top_hit, mid_hit, bot_hit) );
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::read_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_READ) );
+	template <class ADDRESS, class FLAGS>
+	bool WatchPoint<ADDRESS, FLAGS>::read_fault(ADDRESS target_addr, ADDRESS target_size) {
+		return (general_fault (target_addr, target_size, WA_READ, top_hit, mid_hit, bot_hit) );
 	}
 	
-	template <class ADDRESS, class COUNT, class FLAGS>
-	COUNT WatchPoint<ADDRESS, COUNT, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_WRITE) );
+	template <class ADDRESS, class FLAGS>
+	bool WatchPoint<ADDRESS, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
+		return (general_fault (target_addr, target_size, WA_WRITE, top_hit, mid_hit, bot_hit) );
 	}
 }
 
