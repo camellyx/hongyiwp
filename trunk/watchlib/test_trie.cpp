@@ -33,6 +33,9 @@ int main () {
 	}
 	else
 		cout << "OMG, big bug!!" << endl;
+	cout << "top_change: " << watch.trie.top_change << endl;
+	cout << "mid_change: " << watch.trie.mid_change << endl;
+	cout << "bot_change: " << watch.trie.bot_change << endl;
 	return 0;
 }
 
