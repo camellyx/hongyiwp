@@ -198,6 +198,18 @@ VOID Fini(INT32 code, VOID *v)
     OutFile.close();
 }
 
+VOID DataInit() {
+	trie_total.top_hit = 0;
+	trie_total.mid_hit = 0;
+	trie_total.bot_hit = 0;
+	trie_total.top_change = 0;
+	trie_total.mid_change = 0;
+	trie_total.bot_change = 0;
+	trie_total.top_break = 0;
+	trie_total.mid_break = 0;
+	return;
+}
+
 /* ===================================================================== */
 /* Print Help Message                                                    */
 /* ===================================================================== */
@@ -218,6 +230,9 @@ int main(int argc, char * argv[])
     // Initialize pin
     PIN_InitSymbols();
     if (PIN_Init(argc, argv)) return Usage();
+
+	// Initialize data
+	DataInit();
 
     // Initialize the init_lock
     InitLock(&init_lock);
