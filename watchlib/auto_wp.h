@@ -49,7 +49,7 @@ namespace Hongyi_WatchPoint {
 		result.bot_hit += other.bot_hit;
 		result.top_change += other.top_change;
 		result.mid_change += other.mid_change;
-		result.bot_change += other.mid_change;
+		result.bot_change += other.bot_change;
 		result.top_break += other.top_break;
 		result.mid_break += other.mid_break;
 		return result;
