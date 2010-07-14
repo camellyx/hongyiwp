@@ -33,6 +33,7 @@ END_LEGAL */
 #define vector_H
 #endif
 
+#include <map>
 #include <iostream>
 #include <fstream>
 #include "pin.H"
@@ -40,12 +41,23 @@ END_LEGAL */
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
+using Hongyi_WatchPoint::trie_data_t;
+//My own data
+struct thread_wp_data_t
+{
+	WatchPoint<ADDRINT, UINT32> mem;
+	WatchPoint<ADDRINT, UINT32> wp;
+};
 
+map<THREADID,thread_wp_data_t*> thread_map;
+map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
+
+trie_data_t trie_total;
+//My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "inscount_tls.out", "specify output file name");
 
-PIN_LOCK lock;
-INT32 numThreads = 0;
+PIN_LOCK init_lock;
 
 // Force each thread's data to be in its own data cache line so that
 // multiple threads do not contend for the same data cache line.
@@ -53,66 +65,49 @@ INT32 numThreads = 0;
 #define PADSIZE 56  // 64 byte line size: 64-8
 #define MEM_SIZE	-1	// 0xffffffff as the max vertual memory address.
 
-// a running count of the instructions
-
-
-
-struct thread_wp_data_t
-{
-	int threadid;
-	WatchPoint<ADDRINT, ADDRINT, UINT32> mem;
-	WatchPoint<ADDRINT, ADDRINT, UINT32> wp;
-	UINT64 race_count;
-	UINT64 watchfault_count;
-};
-
 // key for accessing TLS storage in the threads. initialized once in main()
-static  TLS_KEY tls_key;
-
-// function to access thread-specific data
-thread_wp_data_t* get_tls(THREADID threadid)
-{
-    thread_wp_data_t* tdata = 
-          static_cast<thread_wp_data_t*>(PIN_GetThreadData(tls_key, threadid));
-    return tdata;
-}
 
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
-    GetLock(&lock, threadid+1);
-    numThreads++;
-    ReleaseLock(&lock);
+	GetLock(&init_lock, threadid+1);//get LOCK
+	thread_wp_data_t* this_thread = new thread_wp_data_t;
 
-    thread_wp_data_t* tdata = new thread_wp_data_t;
+	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
-	tdata->threadid = static_cast<int>(threadid);
-	tdata->race_count = 0;
-	tdata->watchfault_count = 0;
-	(tdata->wp).add_watch_wp(0, MEM_SIZE);
-	
-    PIN_SetThreadData(tls_key, tdata, threadid);
+	thread_map[threadid] = this_thread;
+	ReleaseLock(&init_lock);//release lOCK
+}
+
+VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
+{
+    GetLock(&init_lock, threadid+1);//get LOCK
+	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
+	delete thread_map[threadid];
+	thread_map.erase (threadid);
+    ReleaseLock(&init_lock);//release LOCK
 }
 
 // Print a memory read record
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
-	thread_wp_data_t* tdata = get_tls(threadid);
-    if ( (tdata->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-		(tdata->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(tdata->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
-		for (INT32 t = 0; t < numThreads; t++) {
-			if (t != static_cast<INT32> (threadid) ) {
-				tdata = get_tls(t);
-				if ( (tdata->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					tdata = get_tls(threadid);
-					(tdata->mem).clear();
-					(tdata->wp).add_watch_wp(0, MEM_SIZE);
+	thread_wp_data_t* this_thread = thread_map[threadid];
+    if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
+    	thread_wp_data_t* object_thread;
+		GetLock(&init_lock, threadid+1);//get LOCK
+		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+			if (thread_map_iter->first != threadid) {
+				object_thread = thread_map_iter->second;
+				if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+					(this_thread->mem).clear();
+					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					return;
 				}
 			}
 		}
-		(tdata->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(tdata->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		
+		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
 }
@@ -120,21 +115,25 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 // Print a memory write record
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
-    thread_wp_data_t* tdata = get_tls(threadid);
-    if ( (tdata->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-		for (INT32 t = 0; t < numThreads; t++) {
-			if (t != static_cast<INT32> (threadid) ) {
-				tdata = get_tls(t);
-				if ( (tdata->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					tdata = get_tls(threadid);
-					(tdata->mem).clear();
-					(tdata->wp).add_watch_wp(0, MEM_SIZE);
+	thread_wp_data_t* this_thread = thread_map[threadid];
+	
+    if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+    	thread_wp_data_t* object_thread;
+	    GetLock(&init_lock, threadid+1);//get LOCK
+		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+			if (thread_map_iter->first != threadid) {
+				object_thread = thread_map_iter->second;
+				if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+					(this_thread->mem).clear();
+					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					return;
 				}
 			}
 		}
-		(tdata->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-		(tdata->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		
+		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
 }
@@ -185,13 +184,16 @@ VOID Fini(INT32 code, VOID *v)
     // Write to a file since cout and cerr maybe closed by the application
     ofstream OutFile;
     OutFile.open(KnobOutputFile.Value().c_str());
-    OutFile << "Total number of threads = " << numThreads << endl;
-    
-    for (INT32 t=0; t<numThreads; t++)
-    {
-        thread_wp_data_t* tdata = get_tls(t);
-        OutFile << "thread[" << decstr(t) << "]= " << tdata->threadid << endl;
-    }
+    OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
+    OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
+    OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
+    OutFile << "The number of total changes on top-level: " << trie_total.top_change << endl;
+    OutFile << "The number of total changes on second-level: " << trie_total.mid_change << endl;
+    OutFile << "The number of total changes on bottom-level: " << trie_total.bot_change << endl;
+    OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
+    OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
+    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
+////////////////////////Out put the data collected
 
     OutFile.close();
 }
@@ -217,14 +219,12 @@ int main(int argc, char * argv[])
     PIN_InitSymbols();
     if (PIN_Init(argc, argv)) return Usage();
 
-    // Initialize the lock
-    InitLock(&lock);
-
-    // Obtain  a key for TLS storage.
-    tls_key = PIN_CreateThreadDataKey(0);
+    // Initialize the init_lock
+    InitLock(&init_lock);
 
     // Register ThreadStart to be called when a thread starts.
     PIN_AddThreadStartFunction(ThreadStart, 0);
+    PIN_AddThreadFiniFunction(ThreadFini, 0);
 
     // Register Instruction to be called to instrument instructions.
     INS_AddInstrumentFunction(Instruction, 0);
