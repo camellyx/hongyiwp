@@ -202,6 +202,7 @@ namespace Hongyi_WatchPoint{
 						insert_t.addr = start_iter->addr;
 						insert_t.flags = start_iter->flags;
 						if (iter->addr + iter->size > target_addr + target_size && ( (target_flags ^ iter->flags) & iter->flags) != (target_flags ^ iter->flags) ) {
+							// If the "add" is too short and the adding range ends within a wp. Test split as well
 							iter->size = iter->size - target_size;
 							iter->addr = target_addr + target_size;
 							insert_t.size = target_size + start_iter->size;
