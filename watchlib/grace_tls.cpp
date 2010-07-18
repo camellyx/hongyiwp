@@ -41,6 +41,7 @@ END_LEGAL */
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
+using Hongyi_WatchPoint::MEM_WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
 
 //My own data
@@ -63,7 +64,7 @@ map<OS_THREAD_ID,thread_wp_data_t*>::iterator	thread_map_iter;
 trie_data_t trie_total;
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
-    "o", "Grace_tls.out", "specify output file name");
+    "o", "grace_tls.out", "specify output file name");
 
 PIN_LOCK init_lock;
 
@@ -77,30 +78,30 @@ VOID StageCommit() {//StageCommit don't have lock within. It must be called with
 	thread_wp_data_t* object_thread;
 	for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
 		object_thread = thread_map_iter->second;//cast the iterator's data part to object_thread
-		watchpoint_t temp;//temp will hold the watchpoint_t struct dumped out from object_thread
+		watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
 		if (!object_thread->root) {
-			(object_thread->mem).DumpStart();//This function is not implemented yet. It would get read to dump all the "read/write set" out;
+			(object_thread->mem).DumpStart();// It would get read to dump all the "read/write set" out;
 			while (!(object_thread->mem).DumpEnd() ) {
-				temp = (object_thread->mem).Dump();//Not implemented yet. This would dump out all the wp one by one.
+				temp = (object_thread->mem).Dump();//This would dump out all the wp one by one.
 				thread_wp_data_t* commit_thread = object_thread;//this is an iterator that will go through all the trunks until reaches the root. Start from *this thread.
 				while (!commit_thread->root) {//As long as it doesn't reaches the root.
-					(commit_thread->mem_commit).add_wp_struct(temp);//Not implemented yet. This would add the temp into parent thread's commit_mem;
+					(commit_thread->mem_commit).add_watchpoint(temp.addr, temp.size, temp.flags);//add the temp into parent thread's commit_mem;
 					commit_thread = thread_map[commet_thread->parent_threadid];//Go to higher parent's thread.
 				}
 			}
 		}
 		object_thread->trie = object_thread->trie + (object_thread->wp).get_trie_data();//Add the trie_fault data into the tree.
 		(object_thread->wp).add_watch_wp(0, MEM_SIZE);//put the watchpoint back on;
-		(object_thread->wp).reset_trie();//Not implemented yet. Reset the trie fault in wp.
+		(object_thread->wp).reset_trie();//Reset the trie fault in wp.
 		(object_thread->mem).clear();//clear out all the "readwrite sets" as they are commited.
 	}
 }
 				
 bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, MEM_WatchPoint<ADDRINT, UINT32>& this_mem) {
-	watchpoint_t temp;//temp will hold the watchpoint_t struct dumped out from object_thread
-	(this_mem).DumpStart();//This function is not implemented yet. It would get read to dump all the "read/write set" out;
+	watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
+	(this_mem).DumpStart();//It would get read to dump all the "read/write set" out;
 	while (!(this_mem).DumpEnd() ) {
-		temp = (this_mem).Dump();//Not implemented yet. This would dump out all the wp one by one.
+		temp = (this_mem).Dump();//This would dump out all the wp one by one.
 		if (temp->flags & WA_WRITE) {//If this is a write, then check both read and write.
 			if (sibling_mem.watch_fault(temp.addr, temp.size) )
 				return true;
