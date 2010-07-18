@@ -40,7 +40,21 @@ namespace Hongyi_WatchPoint {
 		unsigned int mid_break;
 		
 		const trie_data_t operator+(const trie_data_t &other) const;
+		trie_data_t();
 	};
+	
+	trie_data_t::trie_data_t() {
+		top_hit = 0;
+		mid_hit = 0;
+		bot_hit = 0;
+		
+		top_change = 0;
+		mid_change = 0;
+		bot_change = 0;
+		
+		top_break = 0;
+		mid_break = 0;
+	}
 	
 	const trie_data_t trie_data_t::operator+(const trie_data_t &other) const {
 		trie_data_t result = *this;
@@ -82,8 +96,9 @@ namespace Hongyi_WatchPoint {
 		bool	write_fault	(ADDRESS target_addr, ADDRESS target_size);
 		//return: The number of how many *write* watchpoints it touches within the range.
 		
-		trie_data_t	get_trie_data ();
+		trie_data_t	get_trie_data();
 		//return: The trie data.
+		void	reset_trie();
 		
 		void	watch_print();
 		
@@ -130,12 +145,20 @@ namespace Hongyi_WatchPoint {
 		bool	write_fault	(ADDRESS target_addr, ADDRESS target_size);
 		//return: The number of how many *write* watchpoints it touches within the range.
 		
+		void	DumpStart();
+		//		would initialize the dump_iter;
+		watchpoint_t<ADDRESS, FLAGS>	Dump();
+		//		would return the watchpoint_t and increment the dump_iter
+		bool	DumpEnd();
+		//		return ture if dump_iter reaches the end of wp.
+		
 		void	watch_print();
 		
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
 		void add_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
 		bool general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
 		deque< watchpoint_t<ADDRESS, FLAGS> > wp;
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator dump_iter;
 	private:
 /*
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
@@ -965,8 +988,14 @@ namespace Hongyi_WatchPoint{
 	}
 	
 	template <class ADDRESS, class FLAGS>
-	trie_data_t WatchPoint<ADDRESS, FLAGS>::get_trie_data () {
+	trie_data_t WatchPoint<ADDRESS, FLAGS>::get_trie_data() {
 		return trie;
+	}
+	
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::reset_trie() {
+		trie = trie_data_t();
+		return;
 	}
 	
 	///////////////////Below is for MEM_WatchPoint
@@ -1437,6 +1466,25 @@ namespace Hongyi_WatchPoint{
 	template <class ADDRESS, class FLAGS>
 	bool MEM_WatchPoint<ADDRESS, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
 		return (general_fault (target_addr, target_size, WA_WRITE) );
+	}
+	
+	template <class ADDRESS, class FLAGS>
+	void	MEM_WatchPoint<ADDRESS, FLAGS>::DumpStart() {
+		dump_iter = wp.begin();
+		return;
+	}
+
+	template <class ADDRESS, class FLAGS>
+	watchpoint_t<ADDRESS, FLAGS>	MEM_WatchPoint<ADDRESS, FLAGS>::Dump() {
+		watchpoint_t<ADDRESS, FLAGS> temp;
+		temp = *dump_iter;
+		dump_iter++;
+		return temp;
+	}
+
+	template <class ADDRESS, class FLAGS>
+	bool	MEM_WatchPoint<ADDRESS, FLAGS>::DumpEnd() {
+		return (dump_iter == wp.end() );
 	}
 }
 
