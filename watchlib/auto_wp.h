@@ -821,11 +821,11 @@ namespace Hongyi_WatchPoint{
 			if (iter != wp.begin() ) {
 				iter--;
 				if (iter->addr + iter->size > (target_addr & ~(4095) ) ) {
-					cout << "bot_modify -1" << endl;
+					//	cout << "bot_modify -1" << endl;
 					bot_page++;
 				}
 				else if (iter->addr + iter->size > (target_addr & ~(4194303) ) ) {
-					cout << "mid_modify -1" << endl;
+					//	cout << "mid_modify -1" << endl;
 					mid_page++;
 				}
 				else
@@ -842,11 +842,11 @@ namespace Hongyi_WatchPoint{
 		if(!addr_covered(target_addr, *iter) && iter !=wp.begin() ) {
 			iter--;
 			if (iter->addr + iter->size > (target_addr & ~(4095) ) ) {
-				cout << "bot_modify 0" << endl;
+				//	cout << "bot_modify 0" << endl;
 				bot_level = true;
 			}
 			else if (iter->addr + iter->size > (target_addr & ~(4194303) ) ) {
-				cout << "mid_modify 0" << endl;
+				//	cout << "mid_modify 0" << endl;
 				mid_level = true;
 			}
 			iter++;
@@ -860,51 +860,51 @@ namespace Hongyi_WatchPoint{
 				wp_fault = true;
 			
 			if (iter->addr > target_addr || iter->addr > (target_addr & ~(4095) ) ) {
-				cout << "begin_addr is the bot_page beginning" << endl;
+				//	cout << "begin_addr is the bot_page beginning" << endl;
 				beg_addr = iter->addr;
 			}
 			else if (iter->addr > (target_addr & ~(4194303) ) ) {
-				cout << "begin_addr is the mid_page beginning" << endl;
+				//	cout << "begin_addr is the mid_page beginning" << endl;
 				beg_addr = target_addr & ~(4095);
 			}
 			else {
-				cout << "begin_addr is the top_page beginning" << endl;
+				//	cout << "begin_addr is the top_page beginning" << endl;
 				beg_addr = target_addr & ~(4194303);
 			}
 				
 			if ( (iter->addr + iter->size <= target_addr + target_size) || iter->addr + iter->size < ( (target_addr + target_size + 4095) & ~(4095) ) ) {
-				cout << "end_addr is the bot_page ending" << endl;
+				//	cout << "end_addr is the bot_page ending" << endl;
 				end_addr = iter->addr + iter->size;
 			}
 			else if ( iter->addr + iter->size < ( (target_addr + target_size + 4194303) & ~(4194303) ) ) {
-				cout << "end_addr is the mid_page ending" << endl;
+				//	cout << "end_addr is the mid_page ending" << endl;
 				end_addr = (target_addr + target_size + 4095) & ~(4095);
 			}
 			else {
-				cout << "end_addr is the top_page ending" << endl;
+				//	cout << "end_addr is the top_page ending" << endl;
 				end_addr = (target_addr + target_size + 4194303) & ~(4194303);
 			}
 			
-			cout << "begin_addr: " << beg_addr << endl;
-			cout << "end_addr: " << end_addr << endl;
+			//	cout << "begin_addr: " << beg_addr << endl;
+			//	cout << "end_addr: " << end_addr << endl;
 			if ( (beg_addr & 4095) || (end_addr & 4095) ) {
 
-				cout << "bot_modify 1" << endl;
+				//	cout << "bot_modify 1" << endl;
 				bot_level = true;
 			}
 			else if ( (beg_addr & 4194303) || (end_addr & 4194303) ) {
-				cout << "mid_modify 1" << endl;
+				//	cout << "mid_modify 1" << endl;
 				mid_level = true;
 			}
 			iter++;
 		}
 		
 		if (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4095) & ~(4095) ) ) {
-			cout << "bot_modify 2" << endl;
+			//	cout << "bot_modify 2" << endl;
 			bot_level = true;
 		}
 		else if (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4194303) & ~(4194303) ) ) {
-			cout << "mid_modify 2" << endl;
+			//	cout << "mid_modify 2" << endl;
 			mid_level = true;
 		}
 		if (bot_level)

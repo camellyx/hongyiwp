@@ -55,7 +55,7 @@ map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 trie_data_t trie_total;
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
-    "o", "inscount_tls.out", "specify output file name");
+    "o", "Rerun_tls.out", "specify output file name");
 
 PIN_LOCK init_lock;
 
@@ -100,6 +100,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 				if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
+					ReleaseLock(&init_lock);//release LOCK
 					return;
 				}
 			}
@@ -126,6 +127,7 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 				if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
+					ReleaseLock(&init_lock);//release LOCK
 					return;
 				}
 			}
