@@ -42,10 +42,11 @@ END_LEGAL */
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
+using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct thread_wp_data_t
 {
-	WatchPoint<ADDRINT, UINT32> mem;
+	MEM_WatchPoint<ADDRINT, UINT32> mem;
 	WatchPoint<ADDRINT, UINT32> wp;
 };
 
