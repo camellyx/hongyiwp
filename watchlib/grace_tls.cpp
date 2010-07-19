@@ -42,23 +42,31 @@ END_LEGAL */
 using namespace std;
 using namespace Hongyi_WatchPoint;
 //My own data
+
+struct	thread_mem_data_t {//This data will not vanish as the thread exit. It would be delete only when parent thread has quited.
+	MEM_WatchPoint<ADDRINT, UINT32> mem;
+	trie_data_t		trie;
+}
+
 struct thread_wp_data_t
 {
-	OS_THREAD_ID		parent_threadid;//this points to its parent thread
-	deque<OS_THREAD_ID>	child_threadid;//this points to all of its child thread. when child_thread_id.size() = 0, then this thread become a leaf.
-	bool			root;//this tells whether if the the thread is root. Well if it's the root thread then parent_thread_id would be invalid.
-	trie_data_t		trie;//this holds the trie data from itself and all its children's 
-	MEM_WatchPoint<ADDRINT, UINT32> mem_commit;//This is for for those commited read/write sets.
-	MEM_WatchPoint<ADDRINT, UINT32> mem;//This is the read/write sets that being temperal.
-	WatchPoint<ADDRINT, UINT32> wp;
+	//As a parent:
+	INT32						child_thread_num;//check if all child thread has finished.
+	deque<thread_mem_data_t*>	child_data;
+	//As a child:
+	OS_THREAD_ID				parent_threadid;//this points to its parent thread
+	thread_mem_data_t*			self_mem_pointer;//points to its owndata, which is stored by its parent.
+	//As a thread itself:
+	bool						root;//this tells whether if the the thread is root. Well if it's the root thread then parent_thread_id would be invalid.
+	WatchPoint<ADDRINT, UINT32>	wp;
 };
 
 INT32 thread_num = 0;//Well this is the only thing to determine whether if a thread is a root or not. If thread_num = 0. Then the thread is a root.
+thread_mem_data_t	root_mem_data;//This is where root store its data(root has no parents)
 
 map<OS_THREAD_ID,thread_wp_data_t*>				thread_map;
 map<OS_THREAD_ID,thread_wp_data_t*>::iterator	thread_map_iter;
 
-trie_data_t trie_total;
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "grace_tls.out", "specify output file name");
@@ -70,29 +78,6 @@ PIN_LOCK init_lock;
 // This avoids the false sharing problem.
 #define PADSIZE 56  // 64 byte line size: 64-8
 #define MEM_SIZE	-1	// 0xffffffff as the max vertual memory address.
-
-VOID StageCommit() {//StageCommit don't have lock within. It must be called within functions which had already locked the data.
-	thread_wp_data_t* object_thread;
-	for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
-		object_thread = thread_map_iter->second;//cast the iterator's data part to object_thread
-		watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
-		if (!object_thread->root) {
-			(object_thread->mem).DumpStart();// It would get read to dump all the "read/write set" out;
-			while (!(object_thread->mem).DumpEnd() ) {
-				temp = (object_thread->mem).Dump();//This would dump out all the wp one by one.
-				thread_wp_data_t* commit_thread = object_thread;//this is an iterator that will go through all the trunks until reaches the root. Start from *this thread.
-				while (!commit_thread->root) {//As long as it doesn't reaches the root.
-					(commit_thread->mem_commit).add_watchpoint(temp.addr, temp.size, temp.flags);//add the temp into parent thread's commit_mem;
-					commit_thread = thread_map[commit_thread->parent_threadid];//Go to higher parent's thread.
-				}
-			}
-		}
-		object_thread->trie = object_thread->trie + (object_thread->wp).get_trie_data();//Add the trie_fault data into the tree.
-		(object_thread->wp).add_watch_wp(0, MEM_SIZE);//put the watchpoint back on;
-		(object_thread->wp).reset_trie();//Reset the trie fault in wp.
-		(object_thread->mem).clear();//clear out all the "readwrite sets" as they are commited.
-	}
-}
 				
 bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, MEM_WatchPoint<ADDRINT, UINT32>& this_mem) {
 	watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
@@ -114,16 +99,22 @@ bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, M
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
 	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID this_threadid = PIN_GetTid();
-	thread_wp_data_t* this_thread = new thread_wp_data_t;
-	if (thread_num == 0)
+	OS_THREAD_ID		this_threadid = PIN_GetTid();
+	thread_wp_data_t*	this_thread = new thread_wp_data_t;
+	if (thread_num == 0) {
 		this_thread->root = true;
-	else {
-		this_thread->root = false;
-		this_thread->parent_threadid = PIN_GetParentTid();
-		(thread_map[this_thread->parent_threadid])->child_threadid.push_back(this_threadid);
-		StageCommit();//If not the root starting, then there will be a stage commit.
+		this_thread->self_mem_pointer = &root_mem_data;//root has no parents so it stores the data at root_mem_data
 	}
+	else {
+		thread_wp_data_t*	parent_thread;
+		this_thread->self_mem_pointer = new thread_mem_data_t;//creat a new mem for itself
+		this_thread->root = false;
+		this_thread->parent_threadid = PIN_GetParentTid();//get the pointer points to its parent thread
+		parent_thread = thread_map[this_thread->parent_threadid];
+		parent_thread->child_data.push_back(this_thread->self_mem_pointer);//insert the mem for this thread into its parent's data. In the order of thread create time
+		parent_thread->child_thread_num++;//parent child_thread_num++
+	}
+	this_thread->child_thread_num = 0;
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
 	thread_map[this_threadid] = this_thread;
@@ -138,32 +129,35 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
 	while (1) {
 		GetLock(&init_lock, threadid+1);//get LOCK
-		if (this_thread->child_threadid.size() == 0)//Only when it becomes a leaf and has no child threads, can this thread ends. 
+		if (this_thread->child_thread_num == 0)//Only when it becomes a leaf and has no child threads, can this thread ends. 
 			break;
 		ReleaseLock(&init_lock);//release lOCK
 	}
-    StageCommit();//First this is a commit stage as a thread is going to end.
-    if (this_thread->root) {//If this thread is the root thread.
-    	trie_total = trie_total + this_thread->trie;//just output the total thread.
-    }
-    else {//If this is not the root thread.
-    	thread_wp_data_t* parent_thread = thread_map[this_thread->parent_threadid];
-    	parent_thread->trie = parent_thread->trie + this_thread->trie;//first add its trie_fault into its parent's.
-    	deque<OS_THREAD_ID>::iterator sibling_iter;//It will iter through all its siblings to check W+W,W+R,R+W faults.
-    	thread_wp_data_t* sibling_thread;//the data pointer of sibling thread
-    	for (sibling_iter = (parent_thread->child_threadid).begin(); sibling_iter != (parent_thread->child_threadid).end(); sibling_iter++) {
-    		if (*sibling_iter != this_threadid) {//sibling must not be itself
-    			sibling_thread = thread_map[*sibling_iter];
-    			if (thread_commit_data_conflict(sibling_thread->mem_commit, this_thread->mem_commit) )//If there are any W+W,W+R,R+W conflicts between its mem_commit and its siblings'
-    				parent_thread->trie = parent_thread->trie + this_thread->trie;
-    		}
-    		else {
-    			sibling_iter = (parent_thread->child_threadid).erase(sibling_iter);//erase this child from the parent's list as it has just finished.
-    			if (sibling_iter == (parent_thread->child_threadid).end() )
+	this_thread->self_mem_ptr->trie = this_thread->wp.get_trie_data();//This would first output itself's fault.
+    if ( (this_thread->child_data).size() ) {//If this thread has at least 1 child.
+    	deque<thread_mem_data_t*>::iterator	child_iter;//It will iter through all its childred to check W+W,W+R,R+W conflict between them.
+		thread_mem_data_t*				child_mem_ptr;//the data pointer to the child's mem data
+		deque<thread_mem_data_t*>::iterator	compare_iter;
+		thread_mem_data_t* 				compare_mem_ptr;
+    	for (child_iter = (this_thread->child_data).end() - 1; child_iter != (this_thread->child_data).begin(); child_iter--) {//Iterate through to check confilict, back->front.(start from the latest spawned child_thread)
+    		child_mem_ptr = *child_iter;
+    		this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
+    		for (compare_iter = child_iter - 1; compare_iter != (this_thread->child_data).begin(); compare_iter--) {//Only check with siblings spawned earlier.
+    			compare_mem_ptr = *compare_iter;
+    			if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) {
+    				this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
     				break;
+    			}
     		}
+    		delete child_mem_ptr;
     	}
+    	child_mem_ptr = *child_iter;
+    	this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie; 
+    	delete child_mem_ptr;
+    	(this_thread->child_data).clear();
     }
+    if (!this_thread->root)
+    	thread_map[this_thread->parent_threadid]->child_thread_num--;
 	delete thread_map[this_threadid];
 	thread_map.erase (this_threadid);
 	thread_num--;
@@ -178,7 +172,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->self_mem_pointer->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
 	}
 	ReleaseLock(&init_lock);//release LOCK
 	return;
@@ -192,7 +186,7 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->self_mem_pointer->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
 	}
 	ReleaseLock(&init_lock);//release LOCK
 	return;
@@ -244,14 +238,14 @@ VOID Fini(INT32 code, VOID *v)
     // Write to a file since cout and cerr maybe closed by the application
     ofstream OutFile;
     OutFile.open(KnobOutputFile.Value().c_str());
-    OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
-    OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
-    OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
-    OutFile << "The number of total changes on top-level: " << trie_total.top_change << endl;
-    OutFile << "The number of total changes on second-level: " << trie_total.mid_change << endl;
-    OutFile << "The number of total changes on bottom-level: " << trie_total.bot_change << endl;
-    OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
-    OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
+    OutFile << "The number of total hits on top-level access: " << root_mem_data.trie.top_hit << endl;
+    OutFile << "The number of total hits on second-level access: " << root_mem_data.trie.mid_hit << endl;
+    OutFile << "The number of total hits on bottom-level access: " << root_mem_data.trie.bot_hit << endl;
+    OutFile << "The number of total changes on top-level: " << root_mem_data.trie.top_change << endl;
+    OutFile << "The number of total changes on second-level: " << root_mem_data.trie.mid_change << endl;
+    OutFile << "The number of total changes on bottom-level: " << root_mem_data.trie.bot_change << endl;
+    OutFile << "The number of total breaks for top-level entires: " << root_mem_data.trie.top_break << endl;
+    OutFile << "The number of total breaks for second-level entries: " << root_mem_data.trie.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
 ////////////////////////Out put the data collected
     OutFile.close();
