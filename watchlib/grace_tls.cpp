@@ -39,11 +39,8 @@ END_LEGAL */
 #include "pin.H"
 #include "auto_wp.h"
 
-using std::deque;
-using Hongyi_WatchPoint::WatchPoint;
-using Hongyi_WatchPoint::MEM_WatchPoint;
-using Hongyi_WatchPoint::trie_data_t;
-
+using namespace std;
+using namespace Hongyi_WatchPoint;
 //My own data
 struct thread_wp_data_t
 {
@@ -86,7 +83,7 @@ VOID StageCommit() {//StageCommit don't have lock within. It must be called with
 				thread_wp_data_t* commit_thread = object_thread;//this is an iterator that will go through all the trunks until reaches the root. Start from *this thread.
 				while (!commit_thread->root) {//As long as it doesn't reaches the root.
 					(commit_thread->mem_commit).add_watchpoint(temp.addr, temp.size, temp.flags);//add the temp into parent thread's commit_mem;
-					commit_thread = thread_map[commet_thread->parent_threadid];//Go to higher parent's thread.
+					commit_thread = thread_map[commit_thread->parent_threadid];//Go to higher parent's thread.
 				}
 			}
 		}
@@ -102,11 +99,11 @@ bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, M
 	(this_mem).DumpStart();//It would get read to dump all the "read/write set" out;
 	while (!(this_mem).DumpEnd() ) {
 		temp = (this_mem).Dump();//This would dump out all the wp one by one.
-		if (temp->flags & WA_WRITE) {//If this is a write, then check both read and write.
+		if (temp.flags & WA_WRITE) {//If this is a write, then check both read and write.
 			if (sibling_mem.watch_fault(temp.addr, temp.size) )
 				return true;
 		}
-		if (temp->flags & WA_READ) {//If this is a read, then check write.
+		if (temp.flags & WA_READ) {//If this is a read, then check write.
 			if (sibling_mem.write_fault(temp.addr, temp.size) )
 				return true;
 		}
@@ -117,17 +114,18 @@ bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, M
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
 	GetLock(&init_lock, threadid+1);//get LOCK
+	OS_THREAD_ID this_threadid = PIN_GetTid();
 	thread_wp_data_t* this_thread = new thread_wp_data_t;
 	if (thread_num == 0)
 		this_thread->root = true;
 	else {
 		this_thread->root = false;
 		this_thread->parent_threadid = PIN_GetParentTid();
+		(thread_map[this_thread->parent_threadid])->child_threadid.push_back(this_threadid);
 		StageCommit();//If not the root starting, then there will be a stage commit.
 	}
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
-	OS_THREAD_ID this_threadid = Pin_GetTid();
 	thread_map[this_threadid] = this_thread;
 	thread_num++;
 		
@@ -136,7 +134,7 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 
 VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
-	OS_THREAD_ID this_threadid = Pin_GetTid();
+	OS_THREAD_ID this_threadid = PIN_GetTid();
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
 	while (1) {
 		GetLock(&init_lock, threadid+1);//get LOCK
@@ -145,22 +143,27 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 		ReleaseLock(&init_lock);//release lOCK
 	}
     StageCommit();//First this is a commit stage as a thread is going to end.
-    if (this_thread->root) {//If this thread is a root thread.
+    if (this_thread->root) {//If this thread is the root thread.
     	trie_total = trie_total + this_thread->trie;//just output the total thread.
+    }
     else {//If this is not the root thread.
-    	parent_thread = thread_map[this_thread->parent_threadid];
+    	thread_wp_data_t* parent_thread = thread_map[this_thread->parent_threadid];
     	parent_thread->trie = parent_thread->trie + this_thread->trie;//first add its trie_fault into its parent's.
     	deque<OS_THREAD_ID>::iterator sibling_iter;//It will iter through all its siblings to check W+W,W+R,R+W faults.
     	thread_wp_data_t* sibling_thread;//the data pointer of sibling thread
     	for (sibling_iter = (parent_thread->child_threadid).begin(); sibling_iter != (parent_thread->child_threadid).end(); sibling_iter++) {
-    		if (*sibling_iter != this_thread_id) {//sibling must not be itself
+    		if (*sibling_iter != this_threadid) {//sibling must not be itself
     			sibling_thread = thread_map[*sibling_iter];
-    			if (thread_commit_data_conflict(sibling_thread->mem_commit, this_thread-mem_commit) )//If there are any W+W,W+R,R+W conflicts between its mem_commit and its siblings'
+    			if (thread_commit_data_conflict(sibling_thread->mem_commit, this_thread->mem_commit) )//If there are any W+W,W+R,R+W conflicts between its mem_commit and its siblings'
     				parent_thread->trie = parent_thread->trie + this_thread->trie;
+    		}
+    		else {
+    			sibling_iter = (parent_thread->child_threadid).erase(sibling_iter);//erase this child from the parent's list as it has just finished.
+    			if (sibling_iter == (parent_thread->child_threadid).end() )
+    				break;
     		}
     	}
     }
-    
 	delete thread_map[this_threadid];
 	thread_map.erase (this_threadid);
 	thread_num--;
@@ -171,7 +174,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
 	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID this_threadid = Pin_GetTid();
+	OS_THREAD_ID this_threadid = PIN_GetTid();
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
@@ -185,7 +188,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
 	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID this_threadid = Pin_GetTid();
+	OS_THREAD_ID this_threadid = PIN_GetTid();
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
@@ -254,18 +257,6 @@ VOID Fini(INT32 code, VOID *v)
     OutFile.close();
 }
 
-VOID DataInit() {
-	trie_total.top_hit = 0;
-	trie_total.mid_hit = 0;
-	trie_total.bot_hit = 0;
-	trie_total.top_change = 0;
-	trie_total.mid_change = 0;
-	trie_total.bot_change = 0;
-	trie_total.top_break = 0;
-	trie_total.mid_break = 0;
-	return;
-}
-
 /* ===================================================================== */
 /* Print Help Message                                                    */
 /* ===================================================================== */
@@ -286,9 +277,6 @@ int main(int argc, char * argv[])
     // Initialize pin
     PIN_InitSymbols();
     if (PIN_Init(argc, argv)) return Usage();
-
-	// Initialize data
-	DataInit();
 
     // Initialize the init_lock
     InitLock(&init_lock);
