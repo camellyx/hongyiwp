@@ -1091,11 +1091,10 @@ namespace Hongyi_WatchPoint{
 					if(start_iter->addr + start_iter->size == target_addr && start_iter->flags == (iter->flags | target_flags) ) {//We will have to merge the two node.
 						insert_t.addr = start_iter->addr;
 						insert_t.flags = start_iter->flags;
-						if (iter->addr + iter->size > target_addr + target_size && ( (target_flags ^ iter->flags) & iter->flags) != (target_flags ^ iter->flags) ) {
-							iter->size = iter->size - target_size;
+						if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {
+							start_iter->size += target_size;
 							iter->addr = target_addr + target_size;
-							insert_t.size = target_size + start_iter->size;
-							wp.insert(iter, insert_t);
+							iter->size -= target_size;
 							return;
 						}
 						insert_t.size = start_iter->size + iter->size;

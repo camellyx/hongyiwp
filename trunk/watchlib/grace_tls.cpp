@@ -46,7 +46,7 @@ using namespace Hongyi_WatchPoint;
 struct	thread_mem_data_t {//This data will not vanish as the thread exit. It would be delete only when parent thread has quited.
 	MEM_WatchPoint<ADDRINT, UINT32> mem;
 	trie_data_t		trie;
-}
+};
 
 struct thread_wp_data_t
 {
@@ -55,7 +55,7 @@ struct thread_wp_data_t
 	deque<thread_mem_data_t*>	child_data;
 	//As a child:
 	OS_THREAD_ID				parent_threadid;//this points to its parent thread
-	thread_mem_data_t*			self_mem_pointer;//points to its owndata, which is stored by its parent.
+	thread_mem_data_t*			self_mem_ptr;//points to its owndata, which is stored by its parent.
 	//As a thread itself:
 	bool						root;//this tells whether if the the thread is root. Well if it's the root thread then parent_thread_id would be invalid.
 	WatchPoint<ADDRINT, UINT32>	wp;
@@ -103,15 +103,15 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 	thread_wp_data_t*	this_thread = new thread_wp_data_t;
 	if (thread_num == 0) {
 		this_thread->root = true;
-		this_thread->self_mem_pointer = &root_mem_data;//root has no parents so it stores the data at root_mem_data
+		this_thread->self_mem_ptr = &root_mem_data;//root has no parents so it stores the data at root_mem_data
 	}
 	else {
 		thread_wp_data_t*	parent_thread;
-		this_thread->self_mem_pointer = new thread_mem_data_t;//creat a new mem for itself
+		this_thread->self_mem_ptr = new thread_mem_data_t;//creat a new mem for itself
 		this_thread->root = false;
 		this_thread->parent_threadid = PIN_GetParentTid();//get the pointer points to its parent thread
 		parent_thread = thread_map[this_thread->parent_threadid];
-		parent_thread->child_data.push_back(this_thread->self_mem_pointer);//insert the mem for this thread into its parent's data. In the order of thread create time
+		parent_thread->child_data.push_back(this_thread->self_mem_ptr);//insert the mem for this thread into its parent's data. In the order of thread create time
 		parent_thread->child_thread_num++;//parent child_thread_num++
 	}
 	this_thread->child_thread_num = 0;
@@ -144,7 +144,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     		this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
     		for (compare_iter = child_iter - 1; compare_iter != (this_thread->child_data).begin(); compare_iter--) {//Only check with siblings spawned earlier.
     			compare_mem_ptr = *compare_iter;
-    			if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) {
+    			if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) ) {
     				this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
     				break;
     			}
@@ -172,7 +172,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->self_mem_pointer->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
 	}
 	ReleaseLock(&init_lock);//release LOCK
 	return;
@@ -186,7 +186,7 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->self_mem_pointer->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+		(this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
 	}
 	ReleaseLock(&init_lock);//release LOCK
 	return;
