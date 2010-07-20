@@ -64,7 +64,7 @@ PIN_LOCK init_lock;
 // multiple threads do not contend for the same data cache line.
 // This avoids the false sharing problem.
 #define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	-1 & ~(4194303)	// 0xffffffff as the max vertual memory address.
+#define MEM_SIZE	0	// 0xffffffff as the max vertual memory address.
 
 // key for accessing TLS storage in the threads. initialized once in main()
 
@@ -92,6 +92,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
+    
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
     	thread_wp_data_t* object_thread;
 		GetLock(&init_lock, threadid+1);//get LOCK
@@ -109,6 +110,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 		
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+//		(this_thread->wp).watch_print();
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
@@ -118,7 +120,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
-	
+    	
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
     	thread_wp_data_t* object_thread;
 	    GetLock(&init_lock, threadid+1);//get LOCK
@@ -136,6 +138,7 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 		
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+//		(this_thread->wp).watch_print();
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
@@ -184,9 +187,9 @@ VOID Instruction(INS ins, VOID *v)
 // This function is called when the application exits
 VOID Fini(INT32 code, VOID *v)
 {
+	ofstream OutFile;
+	OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
-    ofstream OutFile;
-    OutFile.open(KnobOutputFile.Value().c_str());
     OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
@@ -233,9 +236,6 @@ int main(int argc, char * argv[])
     // Initialize pin
     PIN_InitSymbols();
     if (PIN_Init(argc, argv)) return Usage();
-
-	// Initialize data
-	DataInit();
 
     // Initialize the init_lock
     InitLock(&init_lock);
