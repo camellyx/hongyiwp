@@ -183,7 +183,7 @@ namespace {
 
 	template<class ADDRESS, class FLAGS>
 	bool addr_covered (ADDRESS target_addr, const watchpoint_t<ADDRESS, FLAGS>& node) {
-		return ( (target_addr >= node.addr) && (target_addr <= node.addr + node.size - 1) );
+		return (target_addr >= node.addr && target_addr <= node.addr + node.size - 1);
 	}
 	
 	template <class FLAGS>
@@ -201,10 +201,10 @@ namespace {
 		beg = wp.begin();
 		end = wp.end() - 1;
 		
-		if (beg->size == 0)//This is special for size = 0;
+		if (beg != wp.end() && beg->size == 0)//This is special for size = 0;
 			return wp.begin();
 		
-		if (end->addr + end->size <= target_addr)
+		if (end->addr + end->size - 1 < target_addr)
 			return wp.end();
 		if (beg->addr > target_addr)
 			return wp.begin();
@@ -329,11 +329,11 @@ namespace Hongyi_WatchPoint{
 			
 			if (iter != wp.begin() ) {
 				iter--;
-				if (iter->addr + iter->size > (addr & ~(4095) ) ) {
+				if (iter->addr + iter->size - 1 >= (addr & ~(4095) ) ) {
 					hit = BOT;
 					return hit;
 				}
-				if (iter->addr + iter->size > (addr & ~(4194303) ) )
+				if (iter->addr + iter->size - 1 >= (addr & ~(4194303) ) )
 					hit = MID;
 			}
 		}
@@ -361,7 +361,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_READ | WA_WRITE);
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
@@ -369,7 +369,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -389,7 +389,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_READ);
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
@@ -397,7 +397,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -416,7 +416,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_WRITE);
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
@@ -424,7 +424,7 @@ namespace Hongyi_WatchPoint{
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -444,7 +444,7 @@ namespace Hongyi_WatchPoint{
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
-		if (iter->size == 0) {// This is special for size = 0. It would then check for flag inclusion and split it if necessary.
+		if (iter != wp.end() && iter->size == 0) {// This is special for size = 0. It would then check for flag inclusion and split it if necessary.
 			if (!flag_inclusion (target_flags, iter->flags) ) {
 				if (target_addr == 0) {
 					insert_t.addr = target_addr + target_size;
@@ -602,7 +602,7 @@ namespace Hongyi_WatchPoint{
 		
 		
 		//Iterating part
-		while (iter != wp.end() && iter->addr + iter->size <= target_addr + target_size) {
+		while (iter != wp.end() && iter->addr + iter->size - 1 <= target_addr + target_size - 1) {
 			if (iter->addr != insert_t.addr + insert_t.size) {//If there is some blank between the two nodes.
 				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = iter->addr - insert_t.addr;
@@ -723,8 +723,8 @@ namespace Hongyi_WatchPoint{
 		//starting part
 		iter = search_address(target_addr, wp);
 		
-		if (iter->size == 0 && (iter->flags & target_flags) ) {// this is sepcial for size = 0
-			if (target_size == 0) {
+		if (iter != wp.end() && iter->size == 0 && (iter->flags & target_flags) ) {// this is sepcial for size = 0
+			if (target_addr == 0) {
 				iter->addr = target_size;
 				iter->size = 0 - target_size;
 				if (iter->flags != target_flags) {
@@ -800,7 +800,7 @@ namespace Hongyi_WatchPoint{
 		}
 
 		//iterating part		
-		while (iter != wp.end() && iter->addr + iter->size < target_addr + target_size) {
+		while (iter != wp.end() && iter->addr + iter->size - 1 < target_addr + target_size - 1) {
 			if (iter->flags & target_flags) {
 				iter->flags = iter->flags & (~target_flags);
 				if (iter->flags) {
@@ -867,17 +867,17 @@ namespace Hongyi_WatchPoint{
 		PAGE_HIT end_hit_after;
 
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
 		
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -894,17 +894,17 @@ namespace Hongyi_WatchPoint{
 		PAGE_HIT end_hit_after;
 
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, WA_READ);
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
 		
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -921,17 +921,17 @@ namespace Hongyi_WatchPoint{
 		PAGE_HIT end_hit_after;
 
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
-		end_hit_before = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change);
 		
 		beg_iter = search_address(target_addr, wp);
-		end_iter = search_address(target_addr + target_size, wp);
+		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_after = page_level (target_addr, beg_iter);
-		end_hit_after = page_level (target_addr + target_size - 1, beg_iter);
+		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
 		page_break (begin_hit_before, begin_hit_after);
 		page_break (end_hit_before, end_hit_after);
@@ -947,7 +947,7 @@ namespace Hongyi_WatchPoint{
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		iter = search_address(target_addr, wp);
 		
-		if (iter->size == 0) {//This is special for size = 0
+		if (iter != wp.end() && iter->size == 0) {//This is special for size = 0
 			top_page++;
 			return (iter->flags & target_flags);
 		}
@@ -955,7 +955,7 @@ namespace Hongyi_WatchPoint{
 		if (iter == wp.end() ) {
 			if (iter != wp.begin() ) {
 				iter--;
-				if (iter->addr + iter->size - 1 >= (target_addr & ~(4095) ) ) {
+				if (iter->addr + iter->size -1 >= (target_addr & ~(4095) ) ) {
 					//	cout << "bot_modify -1" << endl;
 					bot_page++;
 				}
@@ -990,7 +990,7 @@ namespace Hongyi_WatchPoint{
 		ADDRESS beg_addr;
 		ADDRESS end_addr;
 		
-		while (iter != wp.end() && iter->addr < target_addr + target_size) {
+		while (iter != wp.end() && iter->addr <= target_addr + target_size - 1) {
 			if (iter->flags & target_flags)
 				wp_fault = true;
 			
@@ -1008,13 +1008,13 @@ namespace Hongyi_WatchPoint{
 			}
 				
 			if ( (iter->addr + iter->size - 1 <= target_addr + target_size - 1)
-				 || iter->addr + iter->size - 1 <= ( (target_addr + target_size + 4095) & ~(4095) )
-				 || (target_addr + target_size + 4095) & ~(4095)  == 0  ) {
+			    || iter->addr + iter->size - 1 <= ( (target_addr + target_size + 4095) & ~(4095) )
+			    || ( (target_addr + target_size + 4095) & ~(4095) ) == 0) {
 				//	cout << "end_addr is the bot_page ending" << endl;
 				end_addr = iter->addr + iter->size;
 			}
-			else if ( iter->addr + iter->size - 1 <= ( (target_addr + target_size + 4194303) & ~(4194303) ) 
-				 || (target_addr + target_size + 4194303) & ~(4194303) == 0) {
+			else if ( iter->addr + iter->size - 1 <= ( (target_addr + target_size + 4194303) & ~(4194303) )
+			    || ( (target_addr + target_size + 4194303) & ~(4194303) ) == 0) {
 				//	cout << "end_addr is the mid_page ending" << endl;
 				end_addr = (target_addr + target_size + 4095) & ~(4095);
 			}
@@ -1037,11 +1037,13 @@ namespace Hongyi_WatchPoint{
 			iter++;
 		}
 		
-		if (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4095) & ~(4095) ) ) {
+		if ( (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4095) & ~(4095) ) )
+		    || ( ( (target_addr + target_size + 4095) & ~(4095) ) == 0) ) {
 			//	cout << "bot_modify 2" << endl;
 			bot_level = true;
 		}
-		else if (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4194303) & ~(4194303) ) ) {
+		else if ( (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4194303) & ~(4194303) ) )
+		    || ( ( (target_addr + target_size + 4194303) & ~(4194303) ) == 0) ) {
 			//	cout << "mid_modify 2" << endl;
 			mid_level = true;
 		}
