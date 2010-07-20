@@ -64,7 +64,7 @@ PIN_LOCK init_lock;
 // multiple threads do not contend for the same data cache line.
 // This avoids the false sharing problem.
 #define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	-1	// 0xffffffff as the max vertual memory address.
+#define MEM_SIZE	-1 & ~(4194303)	// 0xffffffff as the max vertual memory address.
 
 // key for accessing TLS storage in the threads. initialized once in main()
 
