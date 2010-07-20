@@ -201,6 +201,9 @@ namespace {
 		beg = wp.begin();
 		end = wp.end() - 1;
 		
+		if (beg->size == 0)//This is special for size = 0;
+			return wp.begin();
+		
 		if (end->addr + end->size <= target_addr)
 			return wp.end();
 		if (beg->addr > target_addr)
@@ -430,13 +433,51 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
-		if (target_size == 0)
-			return;
 		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
+		if (target_size == 0) {//This is special for size = 0. As it clears all the current watchpoints and add the whole system as watched.
+			wp.clear();
+			insert_t.flags = target_flags;
+			wp.push_back(insert_t);
+			return;
+		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
+		if (iter->size == 0) {// This is special for size = 0. It would then check for flag inclusion and split it if necessary.
+			if (!flag_inclusion (target_flags, iter->flags) ) {
+				if (target_addr == 0) {
+					insert_t.addr = target_addr + target_size;
+					insert_t.size = 0 - insert_t.addr;
+					insert_t.flags = iter->flags;
+					iter->size = target_size;
+					iter->flags = target_flags | iter->flags;
+					wp.push_back(insert_t);
+				}
+				else if (target_addr + target_size == 0) {
+					insert_t.addr = target_addr;
+					insert_t.size = target_size;
+					insert_t.flags = iter->flags | target_flags;
+					iter->size = target_addr;
+					wp.push_back(insert_t);
+				}
+				else {
+					insert_t.addr = 0;
+					insert_t.size = target_addr;
+					insert_t.flags = iter->flags;
+					iter->addr = target_addr;
+					iter->size = target_size;
+					iter->flags = target_flags | iter->flags;
+					iter = wp.insert(iter, insert_t);
+					insert_t.addr = target_addr + target_size;
+					insert_t.size = 0 - insert_t.addr;
+					insert_t.flags = iter->flags;
+					wp.push_back(insert_t);
+				}
+			}
+			return;
+		}
+			
 		if (iter == wp.end() ) {
 			if (iter != wp.begin() ) {//We'll need to check if there is some wp ahead of iter and if there is then we need to decide whether merge the two.
 				start_iter = iter - 1;
@@ -673,12 +714,44 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
-		if (target_size == 0)
+		if (target_size == 0) {//This is special for size = 0;
+			wp.clear();
 			return;
+		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator previous_iter;
 		//starting part
 		iter = search_address(target_addr, wp);
+		
+		if (iter->size == 0 && (iter->flags & target_flags) ) {// this is sepcial for size = 0
+			if (target_size == 0) {
+				iter->addr = target_size;
+				iter->size = 0 - target_size;
+				if (iter->flags != target_flags) {
+					watchpoint_t<ADDRESS, FLAGS> insert_t = {0, target_size, iter->flags & ~target_flags};
+					wp.insert(iter, insert_t);
+				}
+			}
+			else if (target_addr + target_size == 0) {
+				iter->size = target_addr;
+				if (iter->flags != target_flags) {
+					watchpoint_t<ADDRESS, FLAGS> insert_t = {target_addr, target_size, iter->flags & ~target_flags};
+					wp.push_back(insert_t);
+				}
+			}
+			else {
+				iter->addr = target_addr + target_size;
+				iter->size = 0 - iter->addr;
+				watchpoint_t<ADDRESS, FLAGS> insert_t = {0, target_addr, iter->flags};				
+				if (iter->flags != target_flags) {
+					watchpoint_t<ADDRESS, FLAGS> insert_T = {target_addr, target_size, iter->flags & ~target_flags};
+					iter = wp.insert(iter, insert_T);
+				}
+				wp.insert(iter, insert_t);
+			}
+			return;
+		}		
+		
 		if (iter == wp.end() )
 			return;
 		if (addr_covered(target_addr - 1, (*iter) ) ) {
@@ -867,10 +940,18 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page) {
-		if (target_size == 0)
+		if (target_size == 0) {
+			top_page++;
 			return false;
+		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		iter = search_address(target_addr, wp);
+		
+		if (iter->size == 0) {//This is special for size = 0
+			top_page++;
+			return (iter->flags & target_flags);
+		}
+		
 		if (iter == wp.end() ) {
 			if (iter != wp.begin() ) {
 				iter--;
