@@ -1115,7 +1115,7 @@ namespace Hongyi_WatchPoint{
 						iter = wp.erase(iter);//iter is incremented.
 					}
 				}
-				else if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {
+				else if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {//Needs split
 					iter->size = iter->size - target_size;
 					iter->addr = target_addr + target_size;
 					insert_t.addr = target_addr;
