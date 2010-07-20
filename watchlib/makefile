@@ -22,6 +22,7 @@ endif
 ##############################################################
 
 ifeq ($(TARGET_COMPILER),gnu)
+	TARGET=ia32
     include ../makefile.gnu.config
     CXXFLAGS ?= -Wall -Werror -Wno-unknown-pragmas $(DBG) $(OPT)
 endif
@@ -39,61 +40,7 @@ endif
 
 
 TOOL_ROOTS = rerun_tls
-ifeq ($(DETACH_SUPPORTED), yes)
-    TOOL_ROOTS += detach
-endif
-TOOL_ROOTS += malloctrace malloc_mt inscount_tls stack-debugger 
 STATIC_TOOL_ROOTS =
-APP_NAMES = fibonacci
-
-# pinatrace and itrace currently hang cygwin gnu windows
-# probe mode requires special libraries to be installed on Linux.
-ifneq ($(TARGET_OS),w)
-    TOOL_ROOTS += pinatrace itrace
-    APP_NAMES += fork_app follow_child_app1 follow_child_app2
-else
-    ifeq ($(TARGET),ia32)
-        TOOL_ROOTS += emudiv
-        DIVTEST = divide_by_zero_win.exe
-        APP_NAMES += $(DIVTEST)
-    endif
-    TOOL_ROOTS += replacesigprobed w_malloctrace buffer-win
-    ifneq ($(TARGET_COMPILER),gnu)
-        TOOL_ROOTS += pinatrace itrace
-    endif
-    THREADTEST = thread_win.exe
-    LITTLEMALLOC = little_malloc.exe
-    APP_NAMES += $(THREADTEST) $(LITTLEMALLOC) 
-endif
-
-ifeq (${TARGET_OS},l)
-    TOOL_ROOTS += strace 
-ifneq ($(TARGET),ipf)
-    DIVTEST = divide_by_zero_lin
-    TOOL_ROOTS += buffer-lin fork_jit_tool follow_child_tool emudiv
-endif
-    STATIC_TOOL_ROOTS += statica
-    THREADTEST = thread_lin
-    LITTLEMALLOC = little_malloc
-    APP_NAMES += $(THREADTEST) $(LITTLEMALLOC) fork_app
-endif
-
-ifeq (${TARGET_OS},m)
-TOOL_ROOTS += strace
-STATIC_TOOL_ROOTS += statica
-endif
-
-ifeq ($(TARGET),ia32)
-TOOL_ROOTS += isampling safecopy invocation countreps
-endif
-
-ifeq ($(TARGET),ia32e)
-TOOL_ROOTS += isampling safecopy invocation countreps
-endif
-
-# Tools which are built specially, e.g. with more than one source file.
-# As well as being defined here they need specific build rules for the tool.
-SPECIAL_TOOL_ROOTS = 
 
 TOOLS = $(TOOL_ROOTS:%=$(OBJDIR)%$(PINTOOL_SUFFIX))
 STATIC_TOOLS = $(STATIC_TOOL_ROOTS:%=$(OBJDIR)%$(SATOOL_SUFFIX))
