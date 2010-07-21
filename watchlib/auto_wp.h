@@ -1176,6 +1176,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page) {
+		//	cout << "Entered general_fault" << endl;
 
 		if (target_size == 0) {
 			top_page++;
@@ -1229,11 +1230,11 @@ namespace Hongyi_WatchPoint{
 		ADDRESS end_addr;
 		
 		while (iter != wp.end() && iter->addr <= target_addr + target_size - 1) {
-			if (iter==wp.begin() && iter->addr != 0) {
+			if (iter == wp.begin() && iter->addr != 0) {
 				end_addr = iter->addr - 1;
 				Range_load (0, end_addr);
 			}
-			else if ( (iter - 1)->addr + (iter - 1)->size != iter->addr) {
+			else if (iter != wp.begin() && (iter - 1)->addr + (iter - 1)->size != iter->addr) {
 				beg_addr = (iter - 1)->addr + (iter - 1)->size;
 				end_addr = iter->addr - 1;
 				Range_load (beg_addr, end_addr);
@@ -1289,7 +1290,8 @@ namespace Hongyi_WatchPoint{
 			mid_page++;
 		else
 			top_page++;
-			
+		
+		//	cout << "Exited general_fault" << endl;
 		return wp_fault;
 	}
 	
@@ -1300,12 +1302,20 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::read_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_READ, trie.top_hit, trie.mid_hit, trie.bot_hit) );
+		bool result;
+		//	cout << "Entered read_fault function" << endl;
+		result = general_fault (target_addr, target_size, WA_READ, trie.top_hit, trie.mid_hit, trie.bot_hit);
+		//	cout << "Exit read_fault function" << endl;
+		return result;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_WRITE, trie.top_hit, trie.mid_hit, trie.bot_hit) );
+		bool result;
+		//	cout << "Entered write_fault function" << endl;
+		result = general_fault (target_addr, target_size, WA_WRITE, trie.top_hit, trie.mid_hit, trie.bot_hit);
+		//	cout << "Exit write_fault function" << endl;
+		return result;
 	}
 	
 	template <class ADDRESS, class FLAGS>
@@ -1321,6 +1331,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Insert_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+		//	cout << "Entered Insert_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		range_t<ADDRESS>	insert_range;
@@ -1349,11 +1360,13 @@ namespace Hongyi_WatchPoint{
 			range.cur_range_num++;
 		}
 		iter = wp.insert(iter, insert_wp);
+		//	cout << "Exited Insert_wp" << endl;
 		return iter;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::Modify_wp (const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+		//	cout << "Entered Modify_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		range_t<ADDRESS>	insert_range;
@@ -1410,11 +1423,13 @@ namespace Hongyi_WatchPoint{
 		iter->addr = modify_t.addr;
 		iter->size = modify_t.size;
 		iter->flags = modify_t.flags;
+		//	cout << "Exited Insert_wp" << endl;
 		return;
 	}
 	
 	template <class ADDRESS, class FLAGS>	
 	void WatchPoint<ADDRESS, FLAGS>::Push_back_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp) {
+		//	cout << "Entered Push_back_wp" << endl;
 		ADDRESS		start_addr;
 		range_t<ADDRESS>	insert_range;
 		typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
@@ -1458,11 +1473,13 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		wp.push_back(insert_wp);
+		//	cout << "Exit Push_back_wp" << endl;
 		return;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque< watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Erase_wp (typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+		//	cout << "Entered Erase_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		ADDRESS		ulti_start_addr;
@@ -1513,10 +1530,12 @@ namespace Hongyi_WatchPoint{
 		
 		iter = wp.erase(iter);
 		return iter;
+		//	cout << "Exit Erase_wp" << endl;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque< range_t<ADDRESS> >::iterator WatchPoint<ADDRESS, FLAGS>::Range_load (ADDRESS start_addr, ADDRESS end_addr) {
+		//	cout << "Range_load in" << endl;
 		bool				find = false;
 		typename deque< range_t<ADDRESS> >::iterator	iter;
 		range_t<ADDRESS>	insert_range;
@@ -1538,6 +1557,7 @@ namespace Hongyi_WatchPoint{
 		insert_range.end_addr = end_addr;
 		iter = range_cache.begin();
 		iter = range_cache.insert(iter, insert_range);
+		//	cout << "Range_load out" << endl;
 		return iter;
 	}
 	
