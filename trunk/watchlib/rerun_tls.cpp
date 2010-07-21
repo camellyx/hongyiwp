@@ -240,6 +240,8 @@ int main(int argc, char * argv[])
     // Initialize the init_lock
     InitLock(&init_lock);
 
+    DataInit();
+
     // Register ThreadStart to be called when a thread starts.
     PIN_AddThreadStartFunction(ThreadStart, 0);
     PIN_AddThreadFiniFunction(ThreadFini, 0);
