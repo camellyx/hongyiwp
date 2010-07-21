@@ -132,6 +132,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 		if (this_thread->child_thread_num == 0)//Only when it becomes a leaf and has no child threads, can this thread ends. 
 			break;
 		ReleaseLock(&init_lock);//release lOCK
+        sleep(1);
 	}
 	this_thread->self_mem_ptr->trie = this_thread->wp.get_trie_data();//This would first output itself's fault.
     if ( (this_thread->child_data).size() ) {//If this thread has at least 1 child.
