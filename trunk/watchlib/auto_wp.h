@@ -368,11 +368,11 @@ namespace Hongyi_WatchPoint{
 	PAGE_HIT WatchPoint<ADDRESS, FLAGS>::page_level (ADDRESS addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
 		PAGE_HIT hit = TOP;
 		if (iter != wp.end() && addr_covered(addr, *iter) ) {
-			if (!addr_covered( (addr & ~(4095) ) , *iter) || !addr_covered( ( (addr + 4096) & ~(4095) ) , *iter) ) {
+			if (!addr_covered( (addr & ~(4095) ) , *iter) || !addr_covered( ( (addr + 4096) & ~(4095) ) - 1 , *iter) ) {
 				hit = BOT;
 				return hit;
 			}
-			else if (!addr_covered( (addr & ~(4194303) ) , *iter) || !addr_covered( ( (addr + 4194304) & ~(4194303) ) , *iter) )
+			else if (!addr_covered( (addr & ~(4194303) ) , *iter) || !addr_covered( ( (addr + 4194304) & ~(4194303) ) - 1 , *iter) )
 				hit = MID;
 		}
 		else {
