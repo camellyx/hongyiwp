@@ -489,9 +489,9 @@ namespace Hongyi_WatchPoint{
 			range_t<ADDRESS> insert_range = {0, -1};
 			range_cache.push_back(insert_range);
 			Push_back_wp(insert_t);
-			cout << "Current range before watchpoints restore: " << range.cur_range_num << endl;
+			//	cout << "Current range before watchpoints restore: " << range.cur_range_num << endl;
 			range.cur_range_num = 1;
-			cout << "Current range after watchpoints restore: " << range.cur_range_num << endl;
+			//	cout << "Current range after watchpoints restore: " << range.cur_range_num << endl;
 			//wp.push_back(insert_t);
 			return;
 		}
@@ -857,9 +857,9 @@ namespace Hongyi_WatchPoint{
 			range_cache.clear();
 			range_t<ADDRESS> insert_range = {0, -1};
 			range_cache.push_back(insert_range);
-			cout << "Current range before watchpoints restore: " << range.cur_range_num << endl;
+			//	cout << "Current range before watchpoints restore: " << range.cur_range_num << endl;
 			range.cur_range_num = 1;
-			cout << "Current range after watchpoints restore: " << range.cur_range_num << endl;
+			//	cout << "Current range after watchpoints restore: " << range.cur_range_num << endl;
 			return;
 		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;

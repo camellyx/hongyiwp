@@ -43,9 +43,12 @@ using namespace std;
 using namespace Hongyi_WatchPoint;
 //My own data
 
+deque<unsigned long long> total_max_range_num;
+
 struct	thread_mem_data_t {//This data will not vanish as the thread exit. It would be delete only when parent thread has quited.
 	MEM_WatchPoint<ADDRINT, UINT32> mem;
 	trie_data_t		trie;
+	range_data_t	range;
 };
 
 struct thread_wp_data_t
@@ -135,6 +138,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
         sleep(1);
 	}
 	this_thread->self_mem_ptr->trie = this_thread->wp.get_trie_data();//This would first output itself's fault.
+	this_thread->self_mem_ptr->range = this_thread->wp.get_range_data();
     if ( (this_thread->child_data).size() ) {//If this thread has at least 1 child.
     	deque<thread_mem_data_t*>::iterator	child_iter;//It will iter through all its childred to check W+W,W+R,R+W conflict between them.
 		thread_mem_data_t*				child_mem_ptr;//the data pointer to the child's mem data
@@ -143,10 +147,12 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     	for (child_iter = (this_thread->child_data).end() - 1; child_iter != (this_thread->child_data).begin(); child_iter--) {//Iterate through to check confilict, back->front.(start from the latest spawned child_thread)
     		child_mem_ptr = *child_iter;
     		this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
+    		this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
     		for (compare_iter = child_iter - 1; compare_iter != (this_thread->child_data).begin(); compare_iter--) {//Only check with siblings spawned earlier.
     			compare_mem_ptr = *compare_iter;
     			if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) ) {
     				this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
+    				this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
     				break;
     			}
     		}
@@ -154,6 +160,8 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     	}
     	child_mem_ptr = *child_iter;
     	this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie; 
+    	this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
+    	total_max_range_num.push_back( (this_thread->self_mem_ptr->range).max_range_num);
     	delete child_mem_ptr;
     	(this_thread->child_data).clear();
     }
@@ -239,6 +247,7 @@ VOID Fini(INT32 code, VOID *v)
     // Write to a file since cout and cerr maybe closed by the application
     ofstream OutFile;
     OutFile.open(KnobOutputFile.Value().c_str());
+    OutFile << "**Trie data: \n" << endl;
     OutFile << "The number of total hits on top-level access: " << root_mem_data.trie.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << root_mem_data.trie.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << root_mem_data.trie.bot_hit << endl;
@@ -247,7 +256,19 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total changes on bottom-level: " << root_mem_data.trie.bot_change << endl;
     OutFile << "The number of total breaks for top-level entires: " << root_mem_data.trie.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << root_mem_data.trie.mid_break << endl;
-    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
+    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+    
+    OutFile << "**Range_cache data: \n" << endl;
+    OutFile << "The number of average ranges in the system: " << root_mem_data.range.avg_range_num << endl;
+    OutFile << "The number of hits in the system: " << root_mem_data.range.hit << endl;
+    OutFile << "The number of miss in the system: " << root_mem_data.range.miss << endl;
+    OutFile << "The number of range kickouts in the system: " << root_mem_data.range.kick << endl << endl;
+    OutFile << "Below are max_range_num for each thread: " << endl;
+    
+    deque<unsigned long long>::iterator iter;
+    for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
+    	OutFile << "The max_range_num for this thread is: " << *iter << endl;
+    }
 ////////////////////////Out put the data collected
     OutFile.close();
 }
