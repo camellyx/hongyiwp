@@ -12,6 +12,8 @@
 #define WP_H
 #endif
 
+//#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+
 #define RANGE_CACHE_SIZE	64
 
 using std::cout;
@@ -36,29 +38,29 @@ namespace Hongyi_WatchPoint {
 	};
 
 	struct trie_data_t {
-		unsigned int top_hit;
-		unsigned int mid_hit;
-		unsigned int bot_hit;
+		unsigned long long top_hit;
+		unsigned long long mid_hit;
+		unsigned long long bot_hit;
 		
-		unsigned int top_change;
-		unsigned int mid_change;
-		unsigned int bot_change;
+		unsigned long long top_change;
+		unsigned long long mid_change;
+		unsigned long long bot_change;
 		
-		unsigned int top_break;
-		unsigned int mid_break;
+		unsigned long long top_break;
+		unsigned long long mid_break;
 		
 		const trie_data_t operator+(const trie_data_t &other) const;
 		trie_data_t();
 	};
 
 	struct range_data_t {
-		unsigned int max_range_num;
+		unsigned long long max_range_num;
 		double avg_range_num;
-		unsigned int cur_range_num;
-		unsigned int changes;
-		unsigned int hit;
-		unsigned int miss;
-		unsigned int kick;
+		unsigned long long cur_range_num;
+		unsigned long long changes;
+		unsigned long long hit;
+		unsigned long long miss;
+		unsigned long long kick;
 		
 		const range_data_t operator+(const range_data_t &other) const;
 		range_data_t();
@@ -150,7 +152,7 @@ namespace Hongyi_WatchPoint {
 		//all below are private
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
 		void add_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
-		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page);
+		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page);
 		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
 		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
 		
@@ -1159,7 +1161,7 @@ namespace Hongyi_WatchPoint{
 	}
 	
 	template <class ADDRESS, class FLAGS>
-	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned int& top_page, unsigned int& mid_page, unsigned int& bot_page) {
+	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page) {
 		//	cout << "Entered general_fault" << endl;
 
 		if (target_size == 0) {
@@ -1327,6 +1329,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Insert_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+	#ifdef RANGE_CACHE
 		//	cout << "Entered Insert_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
@@ -1355,6 +1358,7 @@ namespace Hongyi_WatchPoint{
 			range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 			range.cur_range_num++;
 		}
+	#endif
 		iter = wp.insert(iter, insert_wp);
 		//	cout << "Exited Insert_wp" << endl;
 		return iter;
@@ -1362,6 +1366,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::Modify_wp (const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+	#ifdef RANGE_CACHE
 		//	cout << "Entered Modify_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
@@ -1421,6 +1426,7 @@ namespace Hongyi_WatchPoint{
 					range_cache_iter->start_addr = modify_t.addr + modify_t.size;
 			}
 		}
+	#endif
 		iter->addr = modify_t.addr;
 		iter->size = modify_t.size;
 		iter->flags = modify_t.flags;
@@ -1430,6 +1436,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>	
 	void WatchPoint<ADDRESS, FLAGS>::Push_back_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp) {
+	#ifdef RANGE_CACHE
 		//	cout << "Entered Push_back_wp" << endl;
 		ADDRESS		start_addr;
 		range_t<ADDRESS>	insert_range;
@@ -1476,6 +1483,7 @@ namespace Hongyi_WatchPoint{
 				range.cur_range_num++;
 			}
 		}
+	#endif
 		wp.push_back(insert_wp);
 		//	cout << "Exit Push_back_wp" << endl;
 		return;
@@ -1483,6 +1491,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque< watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Erase_wp (typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
+	#ifdef RANGE_CACHE
 		//	cout << "Entered Erase_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
@@ -1531,7 +1540,7 @@ namespace Hongyi_WatchPoint{
 		insert_range.end_addr = ulti_end_addr;
 		range_cache.insert(range_cache_iter, insert_range);
 		range.cur_range_num++;
-		
+	#endif
 		iter = wp.erase(iter);
 		return iter;
 		//	cout << "Exit Erase_wp" << endl;
@@ -1539,6 +1548,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque< range_t<ADDRESS> >::iterator WatchPoint<ADDRESS, FLAGS>::Range_load (ADDRESS start_addr, ADDRESS end_addr) {
+	#ifdef RANGE_CACHE
 		//	cout << "Range_load in" << endl;
 		bool				find = false;
 		typename deque< range_t<ADDRESS> >::iterator	iter;
@@ -1563,10 +1573,13 @@ namespace Hongyi_WatchPoint{
 		iter = range_cache.insert(iter, insert_range);
 		//	cout << "Range_load out" << endl;
 		return iter;
+	#endif
+		return range_cache.begin();
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup() {
+	#ifdef RANGE_CACHE
 		if (range_cache.size() > RANGE_CACHE_SIZE) {
 			typename deque< range_t<ADDRESS> >::iterator iter;
 			range.kick += range_cache.size() - RANGE_CACHE_SIZE;
@@ -1580,6 +1593,7 @@ namespace Hongyi_WatchPoint{
 		
 		if (range.cur_range_num > range.max_range_num)
 			range.max_range_num = range.cur_range_num;
+	#endif
 		return;
 	}
 	///////////////////Below is for MEM_WatchPoint
