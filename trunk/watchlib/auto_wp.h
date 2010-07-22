@@ -1434,9 +1434,11 @@ namespace Hongyi_WatchPoint{
 		range_t<ADDRESS>	insert_range;
 		typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
 		
-		if (wp.size () == 0) {// There is no watchpoint that covers the entire memory
-			if (insert_wp.size == 0)
+		if (wp.size() == 0) {// There is no watchpoint that covers the entire memory
+			if (insert_wp.size == 0) {
+				wp.push_back(insert_wp);
 				return;
+			}
 			Range_load(0, -1);//This is used just to increment hit.
 			range_cache_iter = range_cache.begin();//So the only range currently in range_cache is [0, -1]
 			range_cache_iter->start_addr = insert_wp.addr;
