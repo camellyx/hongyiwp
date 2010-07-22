@@ -42,6 +42,7 @@ END_LEGAL */
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
+using Hongyi_WatchPoint::range_data_t;
 using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct thread_wp_data_t
@@ -54,6 +55,9 @@ map<THREADID,thread_wp_data_t*> thread_map;
 map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 
 trie_data_t trie_total;
+range_data_t range_total;
+deque<unsigned long long> total_max_range_num;
+
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "Rerun_tls.out", "specify output file name");
@@ -64,7 +68,7 @@ PIN_LOCK init_lock;
 // multiple threads do not contend for the same data cache line.
 // This avoids the false sharing problem.
 #define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	0	// 0xffffffff as the max vertual memory address.
+#define MEM_SIZE	0//(-1 & ~4194303)//0	// 0xffffffff as the max vertual memory address.
 
 // key for accessing TLS storage in the threads. initialized once in main()
 
@@ -76,6 +80,7 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
 	thread_map[threadid] = this_thread;
+	//	cout << "Thread started" << endl;
 	ReleaseLock(&init_lock);//release lOCK
 }
 
@@ -83,6 +88,8 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
     GetLock(&init_lock, threadid+1);//get LOCK
 	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
+	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
+	total_max_range_num.push_back( ( (thread_map[threadid]->wp).get_range_data() ).max_range_num );
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
     ReleaseLock(&init_lock);//release LOCK
@@ -94,12 +101,14 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 	thread_wp_data_t* this_thread = thread_map[threadid];
     
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
+    	//	cout << "In read fault" << endl;
     	thread_wp_data_t* object_thread;
 		GetLock(&init_lock, threadid+1);//get LOCK
 		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
 			if (thread_map_iter->first != threadid) {
 				object_thread = thread_map_iter->second;
 				if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+					//	cout << "it is a clear!" << endl;
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					ReleaseLock(&init_lock);//release LOCK
@@ -111,6 +120,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
 //		(this_thread->wp).watch_print();
+		//	cout << "Out read fault" << endl;
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
@@ -122,12 +132,14 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 	thread_wp_data_t* this_thread = thread_map[threadid];
     	
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+    	//	cout << "In write fault" << endl;
     	thread_wp_data_t* object_thread;
 	    GetLock(&init_lock, threadid+1);//get LOCK
 		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
 			if (thread_map_iter->first != threadid) {
 				object_thread = thread_map_iter->second;
 				if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+					//	cout << "it is a clear!" << endl;
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					ReleaseLock(&init_lock);//release LOCK
@@ -139,6 +151,7 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
 //		(this_thread->wp).watch_print();
+		//	cout << "Out write fault" << endl;
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
@@ -190,6 +203,7 @@ VOID Fini(INT32 code, VOID *v)
 	ofstream OutFile;
 	OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
+    OutFile << "**Trie data: \n" << endl;
     OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
@@ -198,7 +212,19 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total changes on bottom-level: " << trie_total.bot_change << endl;
     OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
-    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
+    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+    
+    OutFile << "**Range_cache data: \n" << endl;
+    OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
+    OutFile << "The number of hits in the system: " << range_total.hit << endl;
+    OutFile << "The number of miss in the system: " << range_total.miss << endl;
+    OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
+    OutFile << "Below are max_range_num for each thread: " << endl;
+    
+    deque<unsigned long long>::iterator iter;
+    for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
+    	OutFile << "The max_range_num for this thread is: " << *iter << endl;
+    }
 ////////////////////////Out put the data collected
 
     OutFile.close();
@@ -239,7 +265,7 @@ int main(int argc, char * argv[])
 
     // Initialize the init_lock
     InitLock(&init_lock);
-
+    
     DataInit();
 
     // Register ThreadStart to be called when a thread starts.
