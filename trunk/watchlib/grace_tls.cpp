@@ -39,6 +39,8 @@ END_LEGAL */
 #include "pin.H"
 #include "auto_wp.h"
 
+//#define RANGE_CACHE
+
 using namespace std;
 using namespace Hongyi_WatchPoint;
 //My own data
@@ -48,7 +50,9 @@ deque<unsigned long long> total_max_range_num;
 struct	thread_mem_data_t {//This data will not vanish as the thread exit. It would be delete only when parent thread has quited.
 	MEM_WatchPoint<ADDRINT, UINT32> mem;
 	trie_data_t		trie;
+#ifdef RANGE_CACHE
 	range_data_t	range;
+#endif
 };
 
 struct thread_wp_data_t
@@ -134,7 +138,9 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     thread_mem_data_t* parent_mem_ptr;
     thread_mem_data_t* compare_mem_ptr;
     trie_data_t temp_trie;
+#ifdef RANGE_CACHE
     range_data_t temp_range;
+#endif
 	while (1) {
 		GetLock(&init_lock, threadid+1);//get LOCK
 		if (this_thread->child_thread_num == 0)//Only when it becomes a leaf and has no child threads, can this thread ends. 
@@ -144,9 +150,11 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 	}
 
     temp_trie = this_thread->wp.get_trie_data();
+#ifdef RANGE_CACHE
     temp_range = this_thread->wp.get_range_data();
     this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + temp_trie;
     this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + temp_range;
+#endif
 
     if (!this_thread->root) {
         thread_map[this_thread->parent_threadid]->child_thread_num--;
@@ -162,14 +170,18 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                     child_iter--) {
                 child_mem_ptr = *child_iter;
                 parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+#ifdef RANGE_CACHE
                 parent_mem_ptr->range = parent_mem_ptr->range + child_mem_ptr->range;
+#endif
                 for (compare_iter = child_iter - 1;
                         compare_iter != (thread_map[this_thread->parent_threadid]->child_data).begin();
                         compare_iter--) {
                     compare_mem_ptr = *compare_iter;
                     if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) ) {
                         parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+#ifdef RANGE_CACHE
                         parent_mem_ptr->range = parent_mem_ptr->range + child_mem_ptr->range;
+#endif
                         break;
                     }
                 }
@@ -177,8 +189,10 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
             }
             child_mem_ptr = *child_iter; // begin() base case
             parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+#ifdef RANGE_CACHE
             parent_mem_ptr->range = parent_mem_ptr->range + parent_mem_ptr->range;
             total_max_range_num.push_back( (child_mem_ptr->range).max_range_num);
+#endif
             delete child_mem_ptr;
             (thread_map[this_thread->parent_threadid]->child_data).clear();
         }
@@ -187,9 +201,11 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
         thread_map.erase (this_threadid);
         thread_num--;
     }
+#ifdef RANGE_CACHE
     else {
         total_max_range_num.push_back( (this_thread->self_mem_ptr->range).max_range_num);
     }
+#endif
     ReleaseLock(&init_lock);//release LOCK
 }
 
@@ -277,7 +293,8 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total breaks for top-level entires: " << root_mem_data.trie.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << root_mem_data.trie.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
-    
+   
+#ifdef RANGE_CACHE 
     OutFile << "**Range_cache data: \n" << endl;
     OutFile << "The number of average ranges in the system: " << root_mem_data.range.avg_range_num << endl;
     OutFile << "The number of hits in the system: " << root_mem_data.range.hit << endl;
@@ -289,6 +306,7 @@ VOID Fini(INT32 code, VOID *v)
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
     	OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
+#endif
 ////////////////////////Out put the data collected
     OutFile.close();
 }

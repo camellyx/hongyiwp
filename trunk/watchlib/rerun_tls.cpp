@@ -39,10 +39,14 @@ END_LEGAL */
 #include "pin.H"
 #include "auto_wp.h"
 
+//#define RANGE_CACHE
+
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
+#ifdef RANGE_CACHE
 using Hongyi_WatchPoint::range_data_t;
+#endif
 using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct thread_wp_data_t
@@ -55,8 +59,10 @@ map<THREADID,thread_wp_data_t*> thread_map;
 map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 
 trie_data_t trie_total;
+#ifdef RANGE_CACHE
 range_data_t range_total;
 deque<unsigned long long> total_max_range_num;
+#endif
 
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
@@ -88,8 +94,10 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
     GetLock(&init_lock, threadid+1);//get LOCK
 	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
+#ifdef RANGE_CACHE
 	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
 	total_max_range_num.push_back( ( (thread_map[threadid]->wp).get_range_data() ).max_range_num );
+#endif
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
     ReleaseLock(&init_lock);//release LOCK
@@ -213,7 +221,7 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
-    
+#ifdef RANGE_CACHE
     OutFile << "**Range_cache data: \n" << endl;
     OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
@@ -225,6 +233,7 @@ VOID Fini(INT32 code, VOID *v)
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
     	OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
+#endif
 ////////////////////////Out put the data collected
 
     OutFile.close();
