@@ -1162,8 +1162,6 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page) {
-		//	cout << "Entered general_fault" << endl;
-
 		if (target_size == 0) {
 			top_page++;
 			return false;
