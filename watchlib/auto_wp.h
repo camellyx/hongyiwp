@@ -321,32 +321,38 @@ namespace Hongyi_WatchPoint{
 		wp.push_back(temp);
 #ifdef RANGE_CACHE
 		//Intiallize the range cache.
-		range_t<ADDRESS>	insert_range = {0, -1};
+		range_t<ADDRESS>	insert_range = {target_addr, target_addr + target_size - 1};
 		range_cache.push_back(insert_range);
+		if (target_addr != 0) {
+			insert_range.start_addr = 0;
+			insert_range.end_addr = target_addr - 1;
+			range_cache.push_back(insert_range);
+			range.cur_range_num++;
+		}
+		if (target_addr + target_size != 0) {
+			insert_range.start_addr = target_addr + target_size;
+			insert_range.end_addr = -1;
+			range_cache.push_back(insert_range);
+			range.cur_range_num++;
+		}
 #endif
 		return;
 	}
 
 	template <class ADDRESS, class FLAGS>
 	WatchPoint<ADDRESS, FLAGS>::WatchPoint(const WatchPoint& parameter) {
-		wp.resize((int)parameter.wp.size());
-		int i;
+		wp.resize((unsigned long long)parameter.wp.size() );
+		unsigned long long i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
 		}
-		trie.top_hit = parameter.trie.top_hit;
-		trie.mid_hit = parameter.trie.mid_hit;
-		trie.bot_hit = parameter.trie.bot_hit;
-		
-		trie.top_change = trie.top_change;
-		trie.mid_change = trie.mid_change;
-		trie.bot_change = trie.bot_change;
-		
-		trie.top_break = trie.top_break;
-		trie.mid_break = trie.mid_break;
-
+		trie = parameter.trie();
 #ifdef RANGE_CACHE
-        // XXX TODO FIXME JLGREATH You should copy the range cache JLGREATH FIXME TODO XXX //
+		range_cache.resize = ((unsigned long long)parameter.range_cache.size() );
+		for (i = 0; i < parameter.range_cache(); i++) {
+			range_cache[i] = parameter.range_cache[i];
+		}
+		range = parameter.range;
 #endif
 		return;
 	}
