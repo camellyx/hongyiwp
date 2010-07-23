@@ -130,6 +130,11 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
 	OS_THREAD_ID this_threadid = PIN_GetTid();
 	thread_wp_data_t* this_thread = thread_map[this_threadid];
+    thread_mem_data_t* child_mem_ptr;
+    thread_mem_data_t* parent_mem_ptr;
+    thread_mem_data_t* compare_mem_ptr;
+    trie_data_t temp_trie;
+    range_data_t temp_range;
 	while (1) {
 		GetLock(&init_lock, threadid+1);//get LOCK
 		if (this_thread->child_thread_num == 0)//Only when it becomes a leaf and has no child threads, can this thread ends. 
@@ -137,39 +142,54 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 		ReleaseLock(&init_lock);//release lOCK
         sleep(1);
 	}
-	this_thread->self_mem_ptr->trie = this_thread->wp.get_trie_data();//This would first output itself's fault.
-	this_thread->self_mem_ptr->range = this_thread->wp.get_range_data();
-    if ( (this_thread->child_data).size() ) {//If this thread has at least 1 child.
-    	deque<thread_mem_data_t*>::iterator	child_iter;//It will iter through all its childred to check W+W,W+R,R+W conflict between them.
-		thread_mem_data_t*				child_mem_ptr;//the data pointer to the child's mem data
-		deque<thread_mem_data_t*>::iterator	compare_iter;
-		thread_mem_data_t* 				compare_mem_ptr;
-    	for (child_iter = (this_thread->child_data).end() - 1; child_iter != (this_thread->child_data).begin(); child_iter--) {//Iterate through to check confilict, back->front.(start from the latest spawned child_thread)
-    		child_mem_ptr = *child_iter;
-    		this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
-    		this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
-    		for (compare_iter = child_iter - 1; compare_iter != (this_thread->child_data).begin(); compare_iter--) {//Only check with siblings spawned earlier.
-    			compare_mem_ptr = *compare_iter;
-    			if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) ) {
-    				this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie;
-    				this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
-    				break;
-    			}
-    		}
-    		delete child_mem_ptr;
-    	}
-    	child_mem_ptr = *child_iter;
-    	this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + child_mem_ptr->trie; 
-    	this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + child_mem_ptr->range;
-    	total_max_range_num.push_back( (this_thread->self_mem_ptr->range).max_range_num);
-    	delete child_mem_ptr;
-    	(this_thread->child_data).clear();
+
+    temp_trie = this_thread->wp.get_trie_data();
+    temp_range = this_thread->wp.get_range_data();
+    this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + temp_trie;
+    this_thread->self_mem_ptr->range = this_thread->self_mem_ptr->range + temp_range;
+
+    if (!this_thread->root) {
+        thread_map[this_thread->parent_threadid]->child_thread_num--;
+
+        if (thread_map[this_thread->parent_threadid]->child_thread_num == 0) {
+            deque<thread_mem_data_t*>::iterator child_iter;
+            deque<thread_mem_data_t*>::iterator compare_iter;
+
+            parent_mem_ptr = thread_map[this_thread->parent_threadid]->self_mem_ptr;
+
+            for (child_iter = (thread_map[this_thread->parent_threadid]->child_data).end() -1;
+                    child_iter != (thread_map[this_thread->parent_threadid]->child_data).begin();
+                    child_iter--) {
+                child_mem_ptr = *child_iter;
+                parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+                parent_mem_ptr->range = parent_mem_ptr->range + child_mem_ptr->range;
+                for (compare_iter = child_iter - 1;
+                        compare_iter != (thread_map[this_thread->parent_threadid]->child_data).begin();
+                        compare_iter--) {
+                    compare_mem_ptr = *compare_iter;
+                    if (thread_commit_data_conflict(compare_mem_ptr->mem, child_mem_ptr->mem) ) {
+                        parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+                        parent_mem_ptr->range = parent_mem_ptr->range + child_mem_ptr->range;
+                        break;
+                    }
+                }
+                delete child_mem_ptr;
+            }
+            child_mem_ptr = *child_iter; // begin() base case
+            parent_mem_ptr->trie = parent_mem_ptr->trie + child_mem_ptr->trie;
+            parent_mem_ptr->range = parent_mem_ptr->range + parent_mem_ptr->range;
+            total_max_range_num.push_back( (child_mem_ptr->range).max_range_num);
+            delete child_mem_ptr;
+            (thread_map[this_thread->parent_threadid]->child_data).clear();
+        }
+
+        delete thread_map[this_threadid];
+        thread_map.erase (this_threadid);
+        thread_num--;
     }
-    if (!this_thread->root)
-    	thread_map[this_thread->parent_threadid]->child_thread_num--;
-	delete thread_map[this_threadid];
-	thread_map.erase (this_threadid);
-	thread_num--;
+    else {
+        total_max_range_num.push_back( (this_thread->self_mem_ptr->range).max_range_num);
+    }
     ReleaseLock(&init_lock);//release LOCK
 }
 
