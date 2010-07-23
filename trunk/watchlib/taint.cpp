@@ -18,6 +18,7 @@
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
+using Hongyi_WatchPoint::range_data_t;
 using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct wp_data_t
@@ -28,6 +29,11 @@ struct wp_data_t
 wp_data_t taint_store;
 
 trie_data_t trie_total;
+
+#ifdef RANGE_CACHE
+range_data_t range_total;//range data
+#endif
+
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
     "o", "taint.out", "specify output file name");
@@ -4301,6 +4307,16 @@ void Fini(INT32 code, void *v)
     OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
+    
+#ifdef RANGE_CACHE
+	range_total = range_total+ taint_store.wp.get_range_data();
+	OutFile << "**Range_cache data: \n" << endl;
+    OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
+    OutFile << "The number of hits in the system: " << range_total.hit << endl;
+    OutFile << "The number of miss in the system: " << range_total.miss << endl;
+    OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
+    OutFile << "The number of maximum ranges in the system: " << range_total.max_range_num << endl;
+#endif
 ////////////////////////Out put the data collected
 
     OutFile.close();
