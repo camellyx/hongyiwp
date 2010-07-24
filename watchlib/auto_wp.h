@@ -15,6 +15,7 @@
 //#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
 
 #define RANGE_CACHE_SIZE	64
+#define WLB_SIZE 128
 
 using std::cout;
 using std::endl;
@@ -87,6 +88,14 @@ namespace Hongyi_WatchPoint {
 		
 		top_break = 0;
 		mid_break = 0;
+
+        wlb_hit_top = 0;
+        wlb_hit_mid = 0;
+        wlb_hit_bot = 0;
+
+        wlb_miss_top = 0;
+        wlb_miss_mid = 0;
+        wlb_miss_bot = 0;
 	}
 	
 	const trie_data_t trie_data_t::operator+(const trie_data_t &other) const {
@@ -99,6 +108,12 @@ namespace Hongyi_WatchPoint {
 		result.bot_change += other.bot_change;
 		result.top_break += other.top_break;
 		result.mid_break += other.mid_break;
+        result.wlb_hit_top += other.wlb_hit_top;
+        result.wlb_hit_mid += other.wlb_hit_mid;
+        result.wlb_hit_bot += other.wlb_hit_bot;
+        result.wlb_miss_top += other.wlb_miss_top;
+        result.wlb_miss_mid += other.wlb_miss_mid;
+        result.wlb_miss_bot += other.wlb_miss_bot;
 		return result;
 	}
 	
@@ -500,6 +515,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
 		watchpoint_t<ADDRESS, FLAGS> modify_t = {0, 0, 0};
+
 		if (target_size == 0) {//This is special for size = 0. As it clears all the current watchpoints and add the whole system as watched.
 			wp.clear();
 			insert_t.flags = target_flags;
@@ -891,26 +907,20 @@ namespace Hongyi_WatchPoint{
     template <class ADDRESS, class FLAGS>
     void WatchPoint<ADDRESS, FLAGS>::invalidate_wlb (ADDRESS target_addr, ADDRESS target_size) {
         typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
-        bool did_erase = false;
-
         for (iter = wlb.begin(); iter != wlb.end(); iter++) {
-            if (did_erase) {
-                did_erase = false;
-                iter--;
-            }
             if (((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                 // Some overlap occurred
                 iter = wlb.erase(iter);
-                did_erase = true;
+                // The ++ will make us skip the new value if we don't back off.
+                iter--;
             }
         }
     }
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
-	
 		watchpoint_t<ADDRESS, FLAGS> modify_t = {0, 0, 0};
-	
+
 		if (target_size == 0) {//This is special for size = 0;
 			wp.clear();
             wlb.clear();
@@ -947,11 +957,9 @@ namespace Hongyi_WatchPoint{
 				modify_t.size = target_addr;
 				modify_t.flags = iter->flags;
 				Modify_wp(modify_t, iter);
-				//iter->size = target_addr;
 				if (iter->flags != target_flags) {
 					watchpoint_t<ADDRESS, FLAGS> insert_t = {target_addr, target_size, iter->flags & ~target_flags};
 					Push_back_wp(insert_t);
-					//wp.push_back(insert_t);
 				}
 			}
 			else {
@@ -959,8 +967,6 @@ namespace Hongyi_WatchPoint{
 				modify_t.size = 0 - modify_t.addr;
 				modify_t.flags = iter->flags;
 				Modify_wp(modify_t, iter);
-				//iter->addr = target_addr + target_size;
-				//iter->size = 0 - iter->addr;
 				watchpoint_t<ADDRESS, FLAGS> insert_t = {0, target_addr, iter->flags};				
 				if (iter->flags != target_flags) {
 					watchpoint_t<ADDRESS, FLAGS> insert_T = {target_addr, target_size, iter->flags & ~target_flags};
@@ -985,17 +991,13 @@ namespace Hongyi_WatchPoint{
 					modify_t.size = iter->addr + iter->size - target_addr - target_size;
 					modify_t.flags = iter->flags;
 					Modify_wp(modify_t, iter);
-					//iter->size = iter->addr + iter->size - target_addr - target_size;
-					//iter->addr = target_addr + target_size;
 					iter = Insert_wp(insert_t, iter);
-					//iter = wp.insert(iter, insert_t);
 					insert_t.flags = iter->flags & (~target_flags);
 					if (insert_t.flags) {
 						insert_t.addr = target_addr;
 						insert_t.size = target_size;
 						iter++;
 						Insert_wp(insert_t, iter);
-						//wp.insert(iter, insert_t);
 					}
 				}
 				Range_cleanup();
@@ -1007,11 +1009,9 @@ namespace Hongyi_WatchPoint{
 				modify_t.size = target_addr - iter->addr;
 				modify_t.flags = iter->flags;
 				Modify_wp(modify_t, iter);
-				//iter->size = target_addr - iter->addr;
 				iter++;
 				if (insert_t.flags) {
 					iter = Insert_wp(insert_t, iter);
-					//iter = wp.insert(iter, insert_t);
 					iter++;
 				}
 			}
@@ -1032,7 +1032,6 @@ namespace Hongyi_WatchPoint{
 						modify_t.size = previous_iter->size + insert_t.size;
 						modify_t.flags = previous_iter->flags;
 						Modify_wp(modify_t, previous_iter);
-						//previous_iter->size += insert_t.size;
 					}
 					else {
 						iter = Insert_wp(insert_t, iter);
@@ -1051,7 +1050,6 @@ namespace Hongyi_WatchPoint{
 				modify_t.size = iter->size;
 				modify_t.flags = iter->flags & (~target_flags);
 				Modify_wp(modify_t, iter);
-				//iter->flags = iter->flags & (~target_flags);
 				if (iter->flags) {
 					previous_iter = iter - 1;
 					if (previous_iter->addr + previous_iter->size == iter->addr && previous_iter->flags == iter->flags) {
@@ -1059,9 +1057,7 @@ namespace Hongyi_WatchPoint{
 						modify_t.size = previous_iter->size + iter->size;
 						modify_t.flags = previous_iter->flags;
 						Modify_wp(modify_t, previous_iter);
-						//previous_iter->size += iter->size;
 						iter = Erase_wp(iter);
-						//iter = wp.erase(iter);
 					}
 					else
 						iter++;
@@ -1216,62 +1212,152 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside) {
-		if (target_size == 0) {
+		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
+        watchpoint_t<ADDRESS, FLAGS> temp_val;
+        temp_val.addr = target_addr;
+        temp_val.size = target_size;
+        bool did_hit = false;
+
+        // If we're looking for a watchpoint for "anything", see if anything is in the WLB.        
+        if (target_size == 0) {
 			top_page++;
-            if( lookaside) {
-                if (wlb.size())
+            if (lookaside) {
+                if (wlb.size()) // SOMETHING is in the WLB... hit!
                     trie.wlb_hit_top++;
                 else {
-                    watchpoint_t<ADDRESS, FLAGS> temp;
-                    temp.addr = 0;
-                    temp.size = 0;
-                    temp.flags = WA_READ|WA_WRITE;
-                    wlb.push_front(temp);
                     trie.wlb_miss_top++;
                 }
             }
 			return false;
 		}
-		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
+
+        // Check the Lookaside buffer and update its LRU status.  See if we WLB hit.
+        if (lookaside) {
+            for (iter = wlb.begin(); iter != wlb.end(); iter++) {
+                if(((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
+                    did_hit = 1;
+                    if (iter->size == 0) {
+                        trie.wlb_hit_top++;
+                        break;
+                    }
+                    temp_val = *iter;
+                    iter = wlb.erase(iter);
+                    wlb.push_front(temp_val);
+                    // Iterator can't be pointing to beginning, so decr. here and for loop will then incr.
+                    iter--;
+                }
+            }
+        }
+
 		iter = search_address(target_addr, wp);
 		
-		if (iter != wp.end() && iter->size == 0) {//This is special for size = 0
+		if (iter != wp.end() && iter->size == 0) {
+            //This is special for size = 0
+            if (lookaside) {
+                // If there's anything in the WLB, it must be the value pointing to "everything".
+                if (wlb.size())
+                    trie.wlb_hit_top++;
+                else {
+                    // Otherwise WLB must load the single value.  This was a miss.
+                    temp_val.addr = 0;
+                    temp_val.size = -1;
+                    temp_val.flags = WA_READ|WA_WRITE;
+                    wlb.push_front(temp_val);
+                    trie.wlb_miss_top++;
+                }
+            }
 			top_page++;
 #ifdef RANGE_CACHE
 			Range_load(0, -1);
 #endif
 			return (iter->flags & target_flags);
 		}
-        return false;
-		
 		if (iter == wp.end() ) {
+            // Not only was the value not in the watchpoint system, we're also at the end of the queue.
 			if (iter != wp.begin() ) {
 				iter--;
-				if (iter->addr + iter->size -1 >= (target_addr & ~(4095) ) ) 
-					bot_page++;
-					
-				else if (iter->addr + iter->size - 1 >= (target_addr & ~(4194303) ) )
-					mid_page++;
+                temp_val.flags = WA_WRITE|WA_READ;
+				if (iter->addr + iter->size -1 >= (target_addr & ~(4095) ) ) {
+                    // Is the last watchpoint (we missed) on the same 4K page as our target?
+                    if (lookaside) {
+                        // Must use a 32-bit (16 watchpoint) LB entry.
+                        temp_val.addr = target_addr & ~(15);
+                        temp_val.size = 16;
 
-				else
-					top_page++;
+                        if (did_hit)
+                            trie.wlb_hit_bot++;
+                        else
+                            trie.wlb_miss_bot++;
+                    }
+                    bot_page++;
+                }
+				else if (iter->addr + iter->size - 1 >= (target_addr & ~(4194303) ) ) {
+                    // Is the last watchpoint (we missed) instead on a 4M page with us?
+                    if (lookaside) {
+                        // Must use 4KB LB entry
+                        temp_val.addr = target_addr & ~(4095);
+                        temp_val.size = 4096;
+
+                        if (did_hit)
+                            trie.wlb_hit_mid++;
+                        else
+                            trie.wlb_miss_mid++;
+                    }
+					mid_page++;
+                }
+				else {
+                    // Else it's somewhere in memory with us a long way off.
+                    if (lookaside) {
+                        // Must use 4MB LB entry
+                        temp_val.addr = target_addr & ~(4194303);
+                        temp_val.size = 4194304;
+
+                        if (did_hit)
+                            trie.wlb_hit_top++;
+                        else
+                            trie.wlb_miss_top++;
+                    }
+                    top_page++;
+                }
+                if (lookaside && !did_hit) {
+                    // We're going to return below (obvious watchpoint miss) so we must update the WLB here.
+                    if (wlb.size() > WLB_SIZE) // WLB full, remove theo ldest entry.
+                        wlb.pop_back();
+                    wlb.push_front(temp_val);
+                }
 #ifdef RANGE_CACHE
 				Range_load(iter->addr + iter->size, -1);
 #endif
 			}
 			else {
+                // Empty watchpoint case.  We're both beginning and end.
+                // Range cache should cover all of memory with "no watchpoint"
 #ifdef RANGE_CACHE
 				Range_load(0, -1);
 #endif
+                if (lookaside) {
+                    // Lookaside agrees.  No watchpoints, so entry covers all memory.
+                    if (!did_hit) {
+                        temp_val.addr = 0;
+                        temp_val.size = -1;
+                        temp_val.flags = 0;
+
+                        if (wlb.size() > WLB_SIZE)
+                            wlb.pop_back();
+                        wlb.push_front(temp_val);
+                        trie.wlb_miss_top++;
+                    }
+                    else
+                        trie.wlb_hit_top++;
+                }
 				top_page++;
 			}
 			return false;
 		}
-		
+
 		bool wp_fault = false;
 		bool mid_level = false;
 		bool bot_level = false;
-
 		
 		if(!addr_covered(target_addr, *iter) && iter !=wp.begin() ) {
 			iter--;
@@ -1281,7 +1367,7 @@ namespace Hongyi_WatchPoint{
 				mid_level = true;
 			iter++;
 		}
-		
+
 		ADDRESS beg_addr;
 		ADDRESS end_addr;
 		
@@ -1337,7 +1423,7 @@ namespace Hongyi_WatchPoint{
 
 			iter++;
 		}
-		
+
 		if (iter != wp.begin() && !addr_covered (target_addr, (*(iter - 1) ) ) ) {
 			beg_addr = (iter - 1)->addr + (iter - 1)->size;
 			if (iter == wp.end() )
@@ -1354,7 +1440,7 @@ namespace Hongyi_WatchPoint{
 			Range_load(0, end_addr);
 #endif
 		}
-		
+
 		if ( (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4095) & ~(4095) ) )
 		    || ( ( (target_addr + target_size + 4095) & ~(4095) ) == 0) ) {
 			//	cout << "bot_modify 2" << endl;
@@ -1365,17 +1451,55 @@ namespace Hongyi_WatchPoint{
 			//	cout << "mid_modify 2" << endl;
 			mid_level = true;
 		}
-		if (bot_level)
+
+        temp_val.flags = WA_WRITE|WA_READ;
+		if (bot_level) {
+            if (lookaside) {
+                temp_val.addr = target_addr & ~(15);
+                temp_val.size = 16;
+
+                if (did_hit)
+                    trie.wlb_hit_bot++;
+                else
+                    trie.wlb_miss_bot++;
+            }
 			bot_page++;
-		else if (mid_level)
+        }
+		else if (mid_level) {
+            if (lookaside) {
+                temp_val.addr = target_addr & ~(4095);
+                temp_val.size = 4096;
+
+                if (did_hit)
+                    trie.wlb_hit_mid++;
+                else
+                    trie.wlb_miss_mid++;
+            }
 			mid_page++;
-		else
+        }
+		else {
+            if (lookaside) {
+                temp_val.addr = target_addr & ~(4194303);
+                temp_val.size = 4194304;
+
+                if (did_hit)
+                    trie.wlb_hit_top++;
+                else
+                    trie.wlb_miss_top++;
+            }
 			top_page++;
+        }
+
+        if (lookaside && !did_hit) {
+            if (wlb.size() > WLB_SIZE)
+                wlb.pop_back();
+            wlb.push_front(temp_val);
+        }
 		
 		//	cout << "Exited general_fault" << endl;
 		return wp_fault;
 	}
-	
+
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::watch_fault(ADDRESS target_addr, ADDRESS target_size) {
 		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_hit, trie.mid_hit, trie.bot_hit, true) );

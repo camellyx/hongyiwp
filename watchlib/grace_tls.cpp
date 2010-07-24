@@ -293,6 +293,13 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total breaks for top-level entires: " << root_mem_data.trie.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << root_mem_data.trie.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+
+    OutFile << "The number of total WLB top-level hits: " << root_mem_data.trie.wlb_hit_top << endl;
+    OutFile << "The number of total WLB mid-level hits: " << root_mem_data.trie.wlb_hit_mid << endl;
+    OutFile << "The number of total WLB bot-level hits: " << root_mem_data.trie.wlb_hit_bot << endl;
+    OutFile << "The number of total WLB top-level misses: " << root_mem_data.trie.wlb_miss_top << endl;
+    OutFile << "The number of total WLB mid-level misses: " << root_mem_data.trie.wlb_miss_mid << endl;
+    OutFile << "The number of total WLB bot-level misses: " << root_mem_data.trie.wlb_miss_bot << endl << endl;
    
 #ifdef RANGE_CACHE 
     OutFile << "**Range_cache data: \n" << endl;

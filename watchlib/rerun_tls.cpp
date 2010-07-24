@@ -107,7 +107,6 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
-    
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
     	//	cout << "In read fault" << endl;
     	thread_wp_data_t* object_thread;
@@ -138,7 +137,7 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
-    	
+
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
     	//	cout << "In write fault" << endl;
     	thread_wp_data_t* object_thread;
@@ -221,8 +220,15 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
     OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+
+    OutFile << "The number of total WLB top-level hits: " << trie_total.wlb_hit_top << endl;
+    OutFile << "The number of total WLB mid-level hits: " << trie_total.wlb_hit_mid << endl;
+    OutFile << "The number of total WLB bot-level hits: " << trie_total.wlb_hit_bot << endl;
+    OutFile << "The number of total WLB top-level misses: " << trie_total.wlb_miss_top << endl;
+    OutFile << "The number of total WLB mid-level misses: " << trie_total.wlb_miss_mid << endl;
+    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl << endl;
 #ifdef RANGE_CACHE
-    OutFile << "**Range_cache data: \n" << endl;
+    OutFile << "**Range_cache data: " << endl;
     OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
     OutFile << "The number of miss in the system: " << range_total.miss << endl;
