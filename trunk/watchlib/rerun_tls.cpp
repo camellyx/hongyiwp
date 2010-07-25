@@ -47,6 +47,9 @@ using Hongyi_WatchPoint::trie_data_t;
 #ifdef RANGE_CACHE
 using Hongyi_WatchPoint::range_data_t;
 #endif
+#ifdef PAGE_TABLE
+using Hongyi_WatchPoint::pagetable_data_t;
+#endif
 using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct thread_wp_data_t
@@ -62,6 +65,9 @@ trie_data_t trie_total;
 #ifdef RANGE_CACHE
 range_data_t range_total;
 deque<unsigned long long> total_max_range_num;
+#endif
+#ifdef PAGE_TABLE
+pagetable_data_t pagetable_total;
 #endif
 
 //My own data
@@ -97,6 +103,9 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 #ifdef RANGE_CACHE
 	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
 	total_max_range_num.push_back( ( (thread_map[threadid]->wp).get_range_data() ).max_range_num );
+#endif
+#ifdef PAGE_TABLE
+	pagetable_total = pagetable_total + (thread_map[threadid]->wp).get_pagetable_data();
 #endif
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
@@ -226,9 +235,9 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total WLB bot-level hits: " << trie_total.wlb_hit_bot << endl;
     OutFile << "The number of total WLB top-level misses: " << trie_total.wlb_miss_top << endl;
     OutFile << "The number of total WLB mid-level misses: " << trie_total.wlb_miss_mid << endl;
-    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl << endl;
+    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl;
 #ifdef RANGE_CACHE
-    OutFile << "**Range_cache data: " << endl;
+    OutFile << endl << "**Range_cache data: " << endl;
     OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
     OutFile << "The number of miss in the system: " << range_total.miss << endl;
@@ -239,6 +248,11 @@ VOID Fini(INT32 code, VOID *v)
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
     	OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
+#endif
+#ifdef PAGE_TABLE
+	OutFile << endl << "**PageTable data: " << endl;
+	OutFile << "The number of accesses to a page that marked as watched: " << pagetable_total.access << endl;
+	OutFile << "The number of accesses to a page and also falls into a watch watchfault(True watchpoint): " << pagetable_total.wp_hit << endl;
 #endif
 ////////////////////////Out put the data collected
 

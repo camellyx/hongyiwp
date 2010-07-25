@@ -12,7 +12,8 @@
 #define WP_H
 #endif
 
-//#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+#define		PAGE_TABLE
+#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
 
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
@@ -74,6 +75,15 @@ namespace Hongyi_WatchPoint {
 		
 		const range_data_t operator+(const range_data_t &other) const;
 		range_data_t();
+	};
+#endif
+
+#ifdef PAGE_TABLE
+	struct pagetable_data_t {
+		unsigned long long access;
+		unsigned long long wp_hit;
+		const pagetable_data_t operator+(const pagetable_data_t &other) const;
+		pagetable_data_t();
 	};
 #endif
 	
@@ -138,7 +148,21 @@ namespace Hongyi_WatchPoint {
 		kick = 0;
 	}
 #endif
+
+#ifdef PAGE_TABLE
+	pagetable_data_t::pagetable_data_t() {
+		access = 0;
+		wp_hit = 0;
+	}
 	
+	const pagetable_data_t pagetable_data_t::operator+(const pagetable_data_t &other) const {
+		pagetable_data_t result = *this;
+		result.access += other.access;
+		result.wp_hit += other.wp_hit;
+		return result;
+	}
+#endif
+
 	enum PAGE_HIT {TOP, MID, BOT};
 	
 	template<class ADDRESS, class FLAGS>
@@ -171,6 +195,10 @@ namespace Hongyi_WatchPoint {
 #ifdef RANGE_CACHE
 		range_data_t get_range_data();
 #endif
+
+#ifdef PAGE_TABLE
+		pagetable_data_t get_pagetable_data();
+#endif
 		//return: The range data;
 		
 		
@@ -193,13 +221,18 @@ namespace Hongyi_WatchPoint {
 #endif
 		//Func:		Search within the range_cache, and automatically increment hits and misses.
 		//return:	the iterator that points to the range_t that is [start_addr, end_addr]. If the searched range is not within cache it would be insert at the front(The most recently used).
+#ifdef RANGE_CACHE
 		void														Range_cleanup();
 		//Func:		This function would be called in Insert_wp, Modify_wp, Push_back_wp and Erase_wp. It would check if after these calling, is range_cache has overflow? If there are, then increment the kick number.
-
+#endif
 		deque< watchpoint_t<ADDRESS, FLAGS> >	wp;
 #ifdef RANGE_CACHE
 		deque< range_t<ADDRESS> >	range_cache;
 		range_data_t	range;
+#endif
+
+#ifdef PAGE_TABLE
+		pagetable_data_t		pagetable;
 #endif
 		trie_data_t		trie;
         deque< watchpoint_t<ADDRESS, FLAGS> > wlb;
@@ -444,7 +477,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_READ | WA_WRITE);
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;//To prevent double counting for range cache hits.
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -472,7 +511,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_READ);
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -499,7 +544,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		add_watchpoint (target_addr, target_size, WA_WRITE);
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -595,7 +646,9 @@ namespace Hongyi_WatchPoint{
 					modify_t.size = start_iter->size + target_size;
 					modify_t.flags = start_iter->flags;
 					Modify_wp(modify_t, start_iter);
+#ifdef RANGE_CACHE
 					Range_cleanup();
+#endif
 					return;
 				}
 			}
@@ -604,7 +657,9 @@ namespace Hongyi_WatchPoint{
 			insert_t.size = target_size;
 			insert_t.flags = target_flags;
 			Push_back_wp(insert_t);
+#ifdef RANGE_CACHE
 			Range_cleanup();
+#endif
 			return;
 		}
 
@@ -628,7 +683,9 @@ namespace Hongyi_WatchPoint{
 							modify_t.size = iter->size - target_size;
 							modify_t.flags = iter->flags;
 							Modify_wp(modify_t, iter);
+#ifdef RANGE_CACHE
 							Range_cleanup();
+#endif
 							return;
 						}
                         // If the current insertion is bigger than what it hit
@@ -654,7 +711,9 @@ namespace Hongyi_WatchPoint{
 							Modify_wp(modify_t, iter);
                             insert_t.size = target_size;
 							Insert_wp(insert_t, iter);
+#ifdef RANGE_CACHE
 							Range_cleanup();
+#endif
 							return;
 						}
                         // Remove old guy because we'll add the new guy below.
@@ -672,7 +731,9 @@ namespace Hongyi_WatchPoint{
 					insert_t.size = target_size;
 					insert_t.flags = target_flags | iter->flags;
 					Insert_wp(insert_t, iter);
+#ifdef RANGE_CACHE
 					Range_cleanup();
+#endif
 					return;
 				}
 				else {
@@ -900,7 +961,9 @@ namespace Hongyi_WatchPoint{
 				iter++;
 			}
 		}
+#ifdef RANGE_CACHE
 		Range_cleanup();
+#endif
 		return;
 	}
 
@@ -974,12 +1037,16 @@ namespace Hongyi_WatchPoint{
 				}
 				Insert_wp(insert_t, iter);
 			}
+#ifdef RANGE_CACHE
 			Range_cleanup();
+#endif
 			return;
 		}
 		
 		if (iter == wp.end() ) {
+#ifdef RANGE_CACHE
 			Range_cleanup();
+#endif
 			return;
 		}
 		if (addr_covered(target_addr - 1, (*iter) ) ) {
@@ -1000,7 +1067,9 @@ namespace Hongyi_WatchPoint{
 						Insert_wp(insert_t, iter);
 					}
 				}
+#ifdef RANGE_CACHE
 				Range_cleanup();
+#endif
 				return;
 			}
 			if (target_flags & iter->flags) {
@@ -1039,7 +1108,9 @@ namespace Hongyi_WatchPoint{
 					}
 				}
 			}
+#ifdef RANGE_CACHE
 			Range_cleanup();
+#endif
 			return;
 		}
 
@@ -1125,7 +1196,9 @@ namespace Hongyi_WatchPoint{
  			//previous_iter->size += iter->size;
  			iter = Erase_wp(iter);
  		}
+#ifdef RANGE_CACHE
  		Range_cleanup();
+#endif
 		return;
 	}
 	
@@ -1144,7 +1217,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -1171,7 +1250,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, WA_READ);
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -1198,7 +1283,13 @@ namespace Hongyi_WatchPoint{
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
+#ifdef	RANGE_CACHE
+		range_data_t temp = range;
+#endif
 		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+#ifdef	RANGE_CACHE
+		range = temp;
+#endif
 		
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
@@ -1289,6 +1380,9 @@ namespace Hongyi_WatchPoint{
                         else
                             trie.wlb_miss_bot++;
                     }
+#ifdef PAGE_TABLE
+					pagetable.access++;//This is the case that the page is marked as "watched" but the address is actually "unwatched".
+#endif
                     bot_page++;
                 }
 				else if (iter->addr + iter->size - 1 >= (target_addr & ~(4194303) ) ) {
@@ -1367,30 +1461,53 @@ namespace Hongyi_WatchPoint{
 				mid_level = true;
 			iter++;
 		}
-
+#ifdef PAGE_TABLE
+		ADDRESS start_page;
+		ADDRESS end_page;
+		if (iter == wp.begin() )
+			end_page = 0;
+		else {
+			end_page = ( (iter-1)->addr + (iter-1)->size - 1) >> 12;
+			if (end_page == target_addr >> 12)
+				pagetable.access++;
+		}
+#endif
 		ADDRESS beg_addr;
 		ADDRESS end_addr;
 		
 		while (iter != wp.end() && iter->addr <= target_addr + target_size - 1) {
+#ifdef RANGE_CACHE
 			if (!addr_covered (target_addr, *iter ) ) {
 				if (iter == wp.begin() && iter->addr != 0) {
 					end_addr = iter->addr - 1;
-#ifdef RANGE_CACHE
+
 					Range_load (0, end_addr);
-#endif
 				}
 				else if (iter != wp.begin() && (iter - 1)->addr + (iter - 1)->size != iter->addr) {
 					beg_addr = (iter - 1)->addr + (iter - 1)->size;
 					end_addr = iter->addr - 1;
-#ifdef RANGE_CACHE
 					Range_load (beg_addr, end_addr);
-#endif
 				}
 			}
 			beg_addr = iter->addr;
 			end_addr = iter->addr + iter->size - 1;
-#ifdef RANGE_CACHE
 			Range_load(beg_addr, end_addr);
+#endif
+
+#ifdef PAGE_TABLE
+			if (iter->addr < target_addr)
+				start_page = target_addr >> 12;
+			else
+				start_page = iter->addr >> 12;
+			if (start_page == end_page)
+			//In case this wp shares the same page with the wp in front of it. We only need to count for once even both of them have parts within this page.
+				pagetable.access--;
+			if (target_addr + target_size - 1 < iter->addr + iter->size - 1)
+				end_page = (target_addr + target_size - 1) >> 12;
+			else
+				end_page = (target_addr + target_size - 1) >> 12;
+			pagetable.access += (end_page - start_page + 1);
+			pagetable.wp_hit += (end_page - start_page + 1);
 #endif
 
 			if (iter->flags & target_flags)
@@ -1424,22 +1541,29 @@ namespace Hongyi_WatchPoint{
 			iter++;
 		}
 
+#ifdef RANGE_CACHE
 		if (iter != wp.begin() && !addr_covered (target_addr, (*(iter - 1) ) ) ) {
 			beg_addr = (iter - 1)->addr + (iter - 1)->size;
 			if (iter == wp.end() )
 				end_addr = -1;
 			else
 				end_addr = iter->addr - 1;
-#ifdef RANGE_CACHE
+
 			Range_load(beg_addr, end_addr);
-#endif
 		}
 		else if (iter == wp.begin() ) {
 			end_addr = iter->addr - 1;
-#ifdef RANGE_CACHE
 			Range_load(0, end_addr);
-#endif
 		}
+#endif
+
+#ifdef PAGE_TABLE
+		if (iter != wp.end() && !addr_covered (target_addr + target_size - 1, *(iter-1) ) ) {
+			start_page = iter->addr >> 12;
+			if (start_page <= ( (target_addr + target_size - 1) >> 12) && start_page != end_page)
+				pagetable.access++;
+		}
+#endif
 
 		if ( (iter != wp.end() && iter->addr < ( (target_addr + target_size + 4095) & ~(4095) ) )
 		    || ( ( (target_addr + target_size + 4095) & ~(4095) ) == 0) ) {
@@ -1530,6 +1654,13 @@ namespace Hongyi_WatchPoint{
 	template <class ADDRESS, class FLAGS>
 	range_data_t WatchPoint<ADDRESS, FLAGS>::get_range_data() {
 		return range;
+	}
+#endif
+
+#ifdef RANGE_CACHE    
+	template <class ADDRESS, class FLAGS>
+	pagetable_data_t WatchPoint<ADDRESS, FLAGS>::get_pagetable_data() {
+		return pagetable;
 	}
 #endif
 	
@@ -1781,10 +1912,10 @@ namespace Hongyi_WatchPoint{
 		return iter;
 	}
 #endif
-	
+
+#ifdef RANGE_CACHE
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup() {
-#ifdef RANGE_CACHE
 		if (range_cache.size() > RANGE_CACHE_SIZE) {
 			typename deque< range_t<ADDRESS> >::iterator iter;
 			range.kick += range_cache.size() - RANGE_CACHE_SIZE;
@@ -1798,9 +1929,10 @@ namespace Hongyi_WatchPoint{
 		
 		if (range.cur_range_num > range.max_range_num)
 			range.max_range_num = range.cur_range_num;
-#endif
 		return;
 	}
+#endif
+
 	///////////////////Below is for MEM_WatchPoint
 	
 	template <class ADDRESS, class FLAGS>
