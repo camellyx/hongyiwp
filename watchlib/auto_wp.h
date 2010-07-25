@@ -1381,7 +1381,8 @@ namespace Hongyi_WatchPoint{
                             trie.wlb_miss_bot++;
                     }
 #ifdef PAGE_TABLE
-					pagetable.access++;//This is the case that the page is marked as "watched" but the address is actually "unwatched".
+					if (lookaside)
+						pagetable.access++;//This is the case that the page is marked as "watched" but the address is actually "unwatched".
 #endif
                     bot_page++;
                 }
@@ -1462,14 +1463,16 @@ namespace Hongyi_WatchPoint{
 			iter++;
 		}
 #ifdef PAGE_TABLE
-		ADDRESS start_page;
-		ADDRESS end_page;
-		if (iter == wp.begin() )
-			end_page = 0;
-		else {
-			end_page = ( (iter-1)->addr + (iter-1)->size - 1) >> 12;
-			if (end_page == target_addr >> 12)
-				pagetable.access++;
+		ADDRESS start_page = 0;
+		ADDRESS end_page = 0;
+		if (lookaside) {
+			if (iter == wp.begin() )
+				end_page = 0;
+			else {
+				end_page = ( (iter-1)->addr + (iter-1)->size - 1) >> 12;
+				if (end_page == target_addr >> 12)
+					pagetable.access++;
+			}
 		}
 #endif
 		ADDRESS beg_addr;
@@ -1495,19 +1498,21 @@ namespace Hongyi_WatchPoint{
 #endif
 
 #ifdef PAGE_TABLE
-			if (iter->addr < target_addr)
-				start_page = target_addr >> 12;
-			else
-				start_page = iter->addr >> 12;
-			if (start_page == end_page)
-			//In case this wp shares the same page with the wp in front of it. We only need to count for once even both of them have parts within this page.
-				pagetable.access--;
-			if (target_addr + target_size - 1 < iter->addr + iter->size - 1)
-				end_page = (target_addr + target_size - 1) >> 12;
-			else
-				end_page = (target_addr + target_size - 1) >> 12;
-			pagetable.access += (end_page - start_page + 1);
-			pagetable.wp_hit += (end_page - start_page + 1);
+			if (lookaside) {
+				if (iter->addr < target_addr)
+					start_page = target_addr >> 12;
+				else
+					start_page = iter->addr >> 12;
+				if (start_page == end_page)
+				//In case this wp shares the same page with the wp in front of it. We only need to count for once even both of them have parts within this page.
+					pagetable.access--;
+				if (target_addr + target_size - 1 < iter->addr + iter->size - 1)
+					end_page = (target_addr + target_size - 1) >> 12;
+				else
+					end_page = (target_addr + target_size - 1) >> 12;
+				pagetable.access += (end_page - start_page + 1);
+				pagetable.wp_hit += (end_page - start_page + 1);
+			}
 #endif
 
 			if (iter->flags & target_flags)
@@ -1558,10 +1563,12 @@ namespace Hongyi_WatchPoint{
 #endif
 
 #ifdef PAGE_TABLE
-		if (iter != wp.end() && !addr_covered (target_addr + target_size - 1, *(iter-1) ) ) {
-			start_page = iter->addr >> 12;
-			if (start_page <= ( (target_addr + target_size - 1) >> 12) && start_page != end_page)
-				pagetable.access++;
+		if (lookaside) {
+			if (iter != wp.end() && !addr_covered (target_addr + target_size - 1, *(iter-1) ) ) {
+				start_page = iter->addr >> 12;
+				if (start_page <= ( (target_addr + target_size - 1) >> 12) && start_page != end_page)
+					pagetable.access++;
+			}
 		}
 #endif
 
