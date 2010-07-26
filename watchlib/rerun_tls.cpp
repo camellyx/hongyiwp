@@ -73,7 +73,7 @@ pagetable_data_t pagetable_total;
 
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
-    "o", "Rerun_tls.out", "specify output file name");
+    "o", "rerun_tls.out", "specify output file name");
 
 PIN_LOCK init_lock;
 
