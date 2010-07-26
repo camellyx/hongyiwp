@@ -12,8 +12,8 @@
 #define WP_H
 #endif
 
-#define		PAGE_TABLE
-#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+//#define		PAGE_TABLE
+//#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
 
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
@@ -568,6 +568,7 @@ namespace Hongyi_WatchPoint{
 		watchpoint_t<ADDRESS, FLAGS> modify_t = {0, 0, 0};
 
 		if (target_size == 0) {//This is special for size = 0. As it clears all the current watchpoints and add the whole system as watched.
+            watchpoint_t<ADDRESS, FLAGS> temp_val;
 			wp.clear();
 			insert_t.flags = target_flags;
 #ifdef RANGE_CACHE
@@ -577,7 +578,12 @@ namespace Hongyi_WatchPoint{
             range.cur_range_num = 1;
 #endif
 			Push_back_wp(insert_t);
+
+            temp_val.addr = 0;
+            temp_val.size = -1;
+            temp_val.flags = WA_WRITE|WA_READ;
             wlb.clear();
+            wlb.push_front(temp_val);
 			return;
 		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
@@ -985,8 +991,14 @@ namespace Hongyi_WatchPoint{
 		watchpoint_t<ADDRESS, FLAGS> modify_t = {0, 0, 0};
 
 		if (target_size == 0) {//This is special for size = 0;
+            watchpoint_t<ADDRESS, FLAGS> temp_val;
 			wp.clear();
+
+            temp_val.addr = 0;
+            temp_val.size = -1;
+            temp_val.flags = WA_WRITE | WA_READ;
             wlb.clear();
+            wlb.push_front(temp_val);
 #ifdef RANGE_CACHE
 			range_cache.clear();
 			range_t<ADDRESS> insert_range = {0, -1};
