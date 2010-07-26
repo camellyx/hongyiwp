@@ -40,6 +40,7 @@ END_LEGAL */
 #include "auto_wp.h"
 
 //#define RANGE_CACHE
+//#define PAGE_TABLE
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
@@ -251,8 +252,8 @@ VOID Fini(INT32 code, VOID *v)
 #endif
 #ifdef PAGE_TABLE
 	OutFile << endl << "**PageTable data: " << endl;
-	OutFile << "The number of accesses to a page that marked as watched: " << pagetable_total.access << endl;
-	OutFile << "The number of accesses to a page and also falls into a watch watchfault(True watchpoint): " << pagetable_total.wp_hit << endl;
+	OutFile << "The number of accesses to a page marked as watched: " << pagetable_total.access << endl;
+	OutFile << "The number of accesses to a real watchpoint: " << pagetable_total.wp_hit << endl;
 #endif
 ////////////////////////Out put the data collected
 

@@ -16,12 +16,16 @@
 #include "auto_wp.h"
 
 //#define RANGE_CACHE
+//#define PAGE_TABLE
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
 using Hongyi_WatchPoint::trie_data_t;
 #ifdef RANGE_CACHE
 using Hongyi_WatchPoint::range_data_t;
+#endif
+#ifdef PAGE_TABLE
+using Hongyi_WatchPoint::pagetable_data_t;
 #endif
 using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
@@ -36,6 +40,9 @@ trie_data_t trie_total;
 
 #ifdef RANGE_CACHE
 range_data_t range_total;//range data
+#endif
+#ifdef PAGE_TABLE
+pagetable_data_t pagetable_total;
 #endif
 
 //My own data
@@ -4316,16 +4323,22 @@ void Fini(INT32 code, void *v)
     OutFile << "The number of total WLB bot-level hits: " << trie_total.wlb_hit_bot << endl;
     OutFile << "The number of total WLB top-level misses: " << trie_total.wlb_miss_top << endl;
     OutFile << "The number of total WLB mid-level misses: " << trie_total.wlb_miss_mid << endl;
-    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl << endl;
+    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl;
     
 #ifdef RANGE_CACHE
-	range_total = range_total+ taint_store.wp.get_range_data();
-	OutFile << "**Range_cache data: \n" << endl;
+	range_total = range_total + taint_store.wp.get_range_data();
+	OutFile << endl << "**Range_cache data: \n" << endl;
     OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
     OutFile << "The number of miss in the system: " << range_total.miss << endl;
     OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
     OutFile << "The number of maximum ranges in the system: " << range_total.max_range_num << endl;
+#endif
+#ifdef PAGE_TABLE
+    pagetable_total = pagetable_total + taint_store.wp.get_pagetable_data();
+    OutFile << endl << "**PageTable data: " << endl;
+    OutFile << "The number of accesses to a page marked as watched: " << pagetable_total.access << endl;
+    OutFile << "The number of accesses to a real watchpoint: " << pagetable_total.wp_hit << endl;
 #endif
 ////////////////////////Out put the data collected
 

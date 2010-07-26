@@ -12,8 +12,8 @@
 #define WP_H
 #endif
 
-//#define		PAGE_TABLE
 //#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+//#define       PAGE_TABLE
 
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
@@ -1676,7 +1676,7 @@ namespace Hongyi_WatchPoint{
 	}
 #endif
 
-#ifdef RANGE_CACHE    
+#ifdef PAGE_TABLE
 	template <class ADDRESS, class FLAGS>
 	pagetable_data_t WatchPoint<ADDRESS, FLAGS>::get_pagetable_data() {
 		return pagetable;
