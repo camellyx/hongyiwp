@@ -13,7 +13,7 @@ void *thread_multi(void *threadid)
 		x = 5;
 		y = 5;
 		ans = x * y;
-		printf("The ans of the plus is %i!\n", ans);
+		//printf("The ans of the plus is %i!\n", ans);
 	}
 	pthread_exit(NULL);
 }
@@ -25,7 +25,7 @@ void *thread_plus(void *threadid)
 		x = 6;
 		y = 6;
 		ans = x + y;
-		printf("The ans of the plus is %i!\n", ans);
+		//printf("The ans of the plus is %i!\n", ans);
 	}
 	pthread_exit(NULL);
 }
