@@ -12,8 +12,8 @@
 #define WP_H
 #endif
 
-//#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
-//#define       PAGE_TABLE
+#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+#define       PAGE_TABLE
 
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
@@ -130,7 +130,9 @@ namespace Hongyi_WatchPoint {
 #ifdef RANGE_CACHE
 	const range_data_t range_data_t::operator+(const range_data_t &other) const {
 		range_data_t result = *this;
+        result.max_range_num += other.max_range_num;
 		result.avg_range_num = ( (result.avg_range_num * result.changes) + (other.avg_range_num * other.changes) ) / ( (result.changes + other.changes) );
+        result.cur_range_num += other.cur_range_num;
 		result.changes += other.changes;
 		result.hit += other.hit;
 		result.miss += other.miss;
@@ -217,7 +219,7 @@ namespace Hongyi_WatchPoint {
 		void														Push_back_wp	(const watchpoint_t<ADDRESS, FLAGS>& insert_t);//This would call wp.push_back() internally and emulate range_cache access
 		typename deque< watchpoint_t<ADDRESS, FLAGS> >::iterator	Erase_wp	(typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);//This would call wp.erase() internally and forward the return value out. Meanwhile emulate range_cache access
 #ifdef RANGE_CACHE
-        typename deque< range_t<ADDRESS> >::iterator				Range_load	(ADDRESS start_addr,	ADDRESS end_addr);//
+        typename deque< range_t<ADDRESS> >::iterator				Range_load	(ADDRESS start_addr,	ADDRESS end_addr, bool hit_miss_care);//
 #endif
 		//Func:		Search within the range_cache, and automatically increment hits and misses.
 		//return:	the iterator that points to the range_t that is [start_addr, end_addr]. If the searched range is not within cache it would be insert at the front(The most recently used).
@@ -1371,7 +1373,7 @@ namespace Hongyi_WatchPoint{
             }
 			top_page++;
 #ifdef RANGE_CACHE
-			Range_load(0, -1);
+			Range_load(0, -1, true);
 #endif
 			return (iter->flags & target_flags);
 		}
@@ -1433,14 +1435,14 @@ namespace Hongyi_WatchPoint{
                     wlb.push_front(temp_val);
                 }
 #ifdef RANGE_CACHE
-				Range_load(iter->addr + iter->size, -1);
+				Range_load(iter->addr + iter->size, -1, true);
 #endif
 			}
 			else {
                 // Empty watchpoint case.  We're both beginning and end.
                 // Range cache should cover all of memory with "no watchpoint"
 #ifdef RANGE_CACHE
-				Range_load(0, -1);
+				Range_load(0, -1, true);
 #endif
                 if (lookaside) {
                     // Lookaside agrees.  No watchpoints, so entry covers all memory.
@@ -1496,17 +1498,17 @@ namespace Hongyi_WatchPoint{
 				if (iter == wp.begin() && iter->addr != 0) {
 					end_addr = iter->addr - 1;
 
-					Range_load (0, end_addr);
+					Range_load (0, end_addr, true);
 				}
 				else if (iter != wp.begin() && (iter - 1)->addr + (iter - 1)->size != iter->addr) {
 					beg_addr = (iter - 1)->addr + (iter - 1)->size;
 					end_addr = iter->addr - 1;
-					Range_load (beg_addr, end_addr);
+					Range_load (beg_addr, end_addr, true);
 				}
 			}
 			beg_addr = iter->addr;
 			end_addr = iter->addr + iter->size - 1;
-			Range_load(beg_addr, end_addr);
+			Range_load(beg_addr, end_addr, true);
 #endif
 
 #ifdef PAGE_TABLE
@@ -1566,11 +1568,11 @@ namespace Hongyi_WatchPoint{
 			else
 				end_addr = iter->addr - 1;
 
-			Range_load(beg_addr, end_addr);
+			Range_load(beg_addr, end_addr, true);
 		}
 		else if (iter == wp.begin() ) {
 			end_addr = iter->addr - 1;
-			Range_load(0, end_addr);
+			Range_load(0, end_addr, true);
 		}
 #endif
 
@@ -1699,7 +1701,7 @@ namespace Hongyi_WatchPoint{
 		else
 			start_addr = (iter - 1)->addr + (iter - 1)->size;
 		
-		range_cache_iter = Range_load(start_addr, end_addr);//as insert must be insert into some kinds of blank, so there must be an unwatched range.
+		range_cache_iter = Range_load(start_addr, end_addr, false);//as insert must be insert into some kinds of blank, so there must be an unwatched range.
 		range_cache_iter->start_addr = insert_wp.addr;//Change the size of the unwatched range, and make it as watched range.
 		range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
 		if (start_addr != insert_wp.addr) {//split front
@@ -1743,7 +1745,7 @@ namespace Hongyi_WatchPoint{
 			}
 			else {
 				end_addr = iter->addr - 1;
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, true);
 				if (modify_t.addr == start_addr) {
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
@@ -1755,7 +1757,7 @@ namespace Hongyi_WatchPoint{
 		
 		start_addr = iter->addr;
 		end_addr = iter->addr + iter->size - 1;
-		range_cache_iter = Range_load(start_addr, end_addr);
+		range_cache_iter = Range_load(start_addr, end_addr, true);
 		range_cache_iter->start_addr = modify_t.addr;
 		range_cache_iter->end_addr = modify_t.addr + modify_t.size - 1;
 		
@@ -1773,7 +1775,7 @@ namespace Hongyi_WatchPoint{
 			}
 			else {
 				start_addr = iter->addr + iter->size;
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, true);
 				if (modify_t.addr + modify_t.size - 1 == end_addr) {
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
@@ -1804,7 +1806,7 @@ namespace Hongyi_WatchPoint{
 				wp.push_back(insert_wp);
 				return;
 			}
-			Range_load(0, -1);//This is used just to increment hit.
+			Range_load(0, -1, false);//This is used just to increment hit.
 			range_cache_iter = range_cache.begin();//So the only range currently in range_cache is [0, -1]
 			range_cache_iter->start_addr = insert_wp.addr;
 			range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
@@ -1823,7 +1825,7 @@ namespace Hongyi_WatchPoint{
 		}
 		else {
 			start_addr = (wp.end() - 1)->addr - 1;//When called push_back, there must be space at the end of "memory". So start_addr != -1
-			range_cache_iter = Range_load(start_addr, -1);
+			range_cache_iter = Range_load(start_addr, -1, false);
 			range_cache_iter->start_addr = insert_wp.addr;
 			range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
 			if (insert_wp.addr != start_addr) {
@@ -1867,14 +1869,14 @@ namespace Hongyi_WatchPoint{
 		ulti_start_addr = start_addr;
 
 		if (end_addr >= start_addr) {
-			range_cache_iter = Range_load(start_addr, end_addr);
+			range_cache_iter = Range_load(start_addr, end_addr, false);
 			range_cache_iter = range_cache.erase(range_cache_iter);
 			range.cur_range_num--;
 		}
 		//Middle
 		start_addr = iter->addr;
 		end_addr = iter->addr + iter->size - 1;
-		range_cache_iter = Range_load(start_addr, end_addr);
+		range_cache_iter = Range_load(start_addr, end_addr, false);
 		range_cache_iter = range_cache.erase(range_cache_iter);
 		range.cur_range_num--;
 		//Back Blank
@@ -1887,7 +1889,7 @@ namespace Hongyi_WatchPoint{
 		ulti_end_addr = end_addr;
 		
 		if (end_addr >= start_addr) {
-			range_cache_iter = Range_load(start_addr, end_addr);
+			range_cache_iter = Range_load(start_addr, end_addr, false);
 			range_cache_iter = range_cache.erase(range_cache_iter);
 			range.cur_range_num--;
 		}
@@ -1904,7 +1906,7 @@ namespace Hongyi_WatchPoint{
 	
 #ifdef RANGE_CACHE
 	template <class ADDRESS, class FLAGS>
-	typename deque< range_t<ADDRESS> >::iterator WatchPoint<ADDRESS, FLAGS>::Range_load (ADDRESS start_addr, ADDRESS end_addr) {
+	typename deque< range_t<ADDRESS> >::iterator WatchPoint<ADDRESS, FLAGS>::Range_load (ADDRESS start_addr, ADDRESS end_addr, bool hit_miss_care) {
 		//	cout << "Range_load in" << endl;
 		bool				find = false;
 		typename deque< range_t<ADDRESS> >::iterator	iter;
@@ -1916,14 +1918,16 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		if (find) {
-			range.hit++;
+            if (hit_miss_care)
+			    range.hit++;
 			insert_range = *iter;
 			range_cache.erase(iter);
 		}
 		else {
 			insert_range.start_addr = start_addr;
 			insert_range.end_addr = end_addr;
-			range.miss++;
+            if (hit_miss_care)
+			    range.miss++;
 		}
 		iter = range_cache.begin();
 		iter = range_cache.insert(iter, insert_range);
