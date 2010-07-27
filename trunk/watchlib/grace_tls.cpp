@@ -39,8 +39,8 @@ END_LEGAL */
 #include "pin.H"
 #include "auto_wp.h"
 
-//#define RANGE_CACHE
-//#define PAGE_TABLE
+#define RANGE_CACHE
+#define PAGE_TABLE
 
 using namespace std;
 using namespace Hongyi_WatchPoint;
@@ -51,6 +51,7 @@ deque<unsigned long long> total_max_range_num;
 struct	thread_mem_data_t {
     //This data will not vanish as the thread exit. It would be delete only after parent thread has stopped.
 	MEM_WatchPoint<ADDRINT, UINT32> mem;
+    UINT64          total_instructions;
 	trie_data_t		trie;
 #ifdef RANGE_CACHE
 	range_data_t	range;
@@ -123,7 +124,7 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
     this_thread->has_had_siblings = false;
     this_thread->has_had_children = false;
 
-    fprintf(stderr, "Starting thread %u\n", this_threadid);
+    //fprintf(stderr, "Starting thread %u\n", this_threadid);
 
 	if (thread_num == 0) {
 		this_thread->root = true;
@@ -134,7 +135,7 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 		this_thread->self_mem_ptr = new thread_mem_data_t;//creat a new mem for itself
 		this_thread->root = false;
 		this_thread->parent_threadid = PIN_GetParentTid();//get the pointer points to its parent thread
-        fprintf(stderr, "Parent of thread %u is %u\n", threadid, this_thread->parent_threadid);
+        //fprintf(stderr, "Parent of thread %u is %u\n", threadid, this_thread->parent_threadid);
 		parent_thread = thread_map[this_thread->parent_threadid];
 		parent_thread->child_data.push_back(this_thread->self_mem_ptr);//insert the mem for this thread into its parent's data. In the order of thread create time
 		parent_thread->child_thread_num++;//parent child_thread_num++
@@ -187,14 +188,14 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     this_thread->self_mem_ptr->pagetable = this_thread->self_mem_ptr->pagetable + temp_pagetable;
 #endif
 
-    fprintf(stderr, "Trying to kill thread %u\n", this_threadid);
+    //fprintf(stderr, "Trying to kill thread %u\n", this_threadid);
 
     if (!this_thread->root) { // Never kill off the root thread
         // This thread is done, so remove one of the parente thread's children.
         thread_map[this_parent_threadid]->child_thread_num--;
 
         if (thread_map[this_parent_threadid]->child_thread_num == 0) {
-            fprintf(stderr, "Trying to actually kill the thread\n");
+            //fprintf(stderr, "Trying to actually kill the thread\n");
             // If all the CURRENT children for the parent thread are now done, we need to run grace comparison against them.
             deque<thread_mem_data_t*>::iterator child_iter;
             deque<thread_mem_data_t*>::iterator compare_iter;
@@ -207,6 +208,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                 bool did_conflict = false;
                 child_mem_ptr = *child_iter;
                 // The total number of trie/range misses sets etc the system sees is at least how many happened in each child thread.
+                root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                 root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
                 root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
@@ -222,6 +224,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                         // There was a conflict between a thread and an earlier sibling thread.
                         // Therefore, the second thread had to run twice.
                         did_conflict = true;
+                        root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                         root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
                         root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
@@ -235,6 +238,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                 if (!did_conflict) {
                     // Didn't conflict with any other child thread, so also check vs parent.
                     if (thread_commit_data_conflict(parent_mem_ptr->mem, child_mem_ptr->mem)) {
+                        root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                         root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
                         root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
@@ -244,8 +248,10 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 #endif
                     }
                 }
+                total_max_range_num.push_back( (child_mem_ptr->range).max_range_num);
             }
             child_mem_ptr = *child_iter; // begin() base case
+            root_mem_data.total_instructions += child_mem_ptr->total_instructions;
             root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
             root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
@@ -257,7 +263,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 
             // Thread information cleanup.
             if (!this_thread->has_had_siblings && !this_thread->has_had_children) {
-                fprintf(stderr, "No siblings and children\n");
+                //fprintf(stderr, "No siblings and children\n");
                 // If this guy had no siblings or children, no one will clean him up.
                 // He must do it himself.
                 delete this_thread->self_mem_ptr;
@@ -266,7 +272,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                 thread_num--;
             }
             else {
-                fprintf(stderr, "Siblings and children\n");
+                //fprintf(stderr, "Siblings and children\n");
                 // This thread has either siblings or children.  We're in here because the parent
                 // has no more life children, so we should first try to delete all siblings.
                 deque<OS_THREAD_ID>::iterator sibling_thread_id;
@@ -274,21 +280,21 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                 for(sibling_thread_id = (thread_map[this_parent_threadid]->children_thread_ids).begin();
                         sibling_thread_id != (thread_map[this_parent_threadid]->children_thread_ids).end();
                         sibling_thread_id++) {
-                    fprintf(stderr, "Attempting to kill siblings %u\n", *sibling_thread_id);
+                    //fprintf(stderr, "Attempting to kill siblings %u\n", *sibling_thread_id);
                     thread_wp_data_t *sibling_thread = thread_map[*sibling_thread_id];
                     if (!thread_map[this_parent_threadid]->child_thread_num) {
                         // If the sibling never had children it is absolutely OK to delete its data.
                         // If the sibling HAD children but the number is at zero, then there is
                         // no one left to delete it, so we must.
                         if (!sibling_thread->has_had_children || !sibling_thread->child_thread_num){
-                            fprintf(stderr, "That sibling had no children or they dead\n");
+                            //fprintf(stderr, "That sibling had no children or they dead\n");
                             delete sibling_thread->self_mem_ptr;
                             delete thread_map[*sibling_thread_id];
                             thread_map.erase(*sibling_thread_id);
                             thread_num--;
                         }
                         else {
-                            fprintf(stderr, "Sibling skip\n");
+                            //fprintf(stderr, "Sibling skip\n");
                             // If this sibling thread still has live children, then THEY
                             // must delete it.
                             // We'll leave it around for its last child to delete.
@@ -300,7 +306,7 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
             (thread_map[this_parent_threadid]->child_data).clear();
 
             if (thread_map[this_parent_threadid]->sibling_skipped_kill) {
-                fprintf(stderr, "Gotta kill the parent\n");
+                //fprintf(stderr, "Gotta kill the parent\n");
                 // If one of our parents siblings skipped killing it because we (the child) existed
                 // We, the last child, must be the one to kill it.
                 // (This also includes the one parent one child case, where it skips killing itself in the sibling-list walk).
@@ -348,6 +354,25 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 	return;
 }
 
+// This function is called before every block
+VOID PIN_FAST_ANALYSIS_CALL docount(ADDRINT c)
+{
+    thread_map[PIN_GetTid()]->self_mem_ptr->total_instructions += c;
+}
+
+// Count the number of each specific instruction.
+VOID Trace(TRACE trace, VOID *v)
+{
+    // Visit every basic block  in the trace
+    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+    {
+        // Insert a call to docount for every bbl, passing the number of instructions.
+        // IPOINT_ANYWHERE allows Pin to schedule the call anywhere in the bbl to obtain best performance.
+        BBL_InsertCall(bbl, IPOINT_ANYWHERE, (AFUNPTR)docount, IARG_FAST_ANALYSIS_CALL, IARG_UINT32, 
+                BBL_NumIns(bbl), IARG_END);
+    }
+}
+
 // Is called for every instruction and instruments reads and writes
 VOID Instruction(INS ins, VOID *v)
 {
@@ -391,10 +416,17 @@ VOID Instruction(INS ins, VOID *v)
 // This function is called when the application exits
 VOID Fini(INT32 code, VOID *v)
 {
+    /*OS_THREAD_ID this_threadid = PIN_GetTid();
+    thread_wp_data_t *this_thread = thread_map[this_threadid];
+
+    total_max_range_num.push_back( (this_thread->self_mem_ptr->range).max_range_num);*/
+
     // Write to a file since cout and cerr maybe closed by the application
     ofstream OutFile;
     OutFile.open(KnobOutputFile.Value().c_str());
-    OutFile << "**Trie data: \n" << endl;
+    OutFile << "Total number of instructions: " << root_mem_data.total_instructions << endl;
+
+    OutFile << endl << "**Trie data:" << endl;
     OutFile << "The number of total hits on top-level access: " << root_mem_data.trie.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << root_mem_data.trie.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << root_mem_data.trie.bot_hit << endl;
@@ -403,9 +435,9 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total changes on bottom-level: " << root_mem_data.trie.bot_change << endl;
     OutFile << "The number of total breaks for top-level entires: " << root_mem_data.trie.top_break << endl;
     OutFile << "The number of total breaks for second-level entries: " << root_mem_data.trie.mid_break << endl;
-    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl;
 
-    OutFile << "The number of total WLB top-level hits: " << root_mem_data.trie.wlb_hit_top << endl;
+    OutFile << endl << "The number of total WLB top-level hits: " << root_mem_data.trie.wlb_hit_top << endl;
     OutFile << "The number of total WLB mid-level hits: " << root_mem_data.trie.wlb_hit_mid << endl;
     OutFile << "The number of total WLB bot-level hits: " << root_mem_data.trie.wlb_hit_bot << endl;
     OutFile << "The number of total WLB top-level misses: " << root_mem_data.trie.wlb_miss_top << endl;
@@ -461,6 +493,8 @@ int main(int argc, char * argv[])
     // Register ThreadStart to be called when a thread starts.
     PIN_AddThreadStartFunction(ThreadStart, 0);
     PIN_AddThreadFiniFunction(ThreadFini, 0);
+
+    TRACE_AddInstrumentFunction(Trace, 0);
 
     // Register Instruction to be called to instrument instructions.
     INS_AddInstrumentFunction(Instruction, 0);

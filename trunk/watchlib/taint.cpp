@@ -15,8 +15,8 @@
 #include "xed-iclass-enum.h"
 #include "auto_wp.h"
 
-//#define RANGE_CACHE
-//#define PAGE_TABLE
+#define RANGE_CACHE
+#define PAGE_TABLE
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
@@ -35,6 +35,8 @@ struct wp_data_t
 };
 
 wp_data_t taint_store;
+
+UINT64 number_of_instructions;
 
 trie_data_t trie_total;
 
@@ -4287,14 +4289,21 @@ void Instruction(INS ins, void* v)
     }
 }
 
+// This function is called before every block
+VOID PIN_FAST_ANALYSIS_CALL docount(ADDRINT c, THREADID tid)
+{
+    number_of_instructions += c;
+}
+
 void Trace(TRACE trace, void* v)
 {
-
-// Visit every basic block  in the trace
-    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl)) {
-	for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)){
-	    Instruction(ins, v);
- 	}
+    // Visit every basic block  in the trace
+    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+    {
+        // Insert a call to docount for every bbl, passing the number of instructions.
+        // IPOINT_ANYWHERE allows Pin to schedule the call anywhere in the bbl to obtain best performance.
+        BBL_InsertCall(bbl, IPOINT_ANYWHERE, (AFUNPTR)docount, IARG_FAST_ANALYSIS_CALL, IARG_UINT32, 
+                BBL_NumIns(bbl), IARG_THREAD_ID, IARG_END);
     }
 }
 
@@ -4307,8 +4316,10 @@ void Fini(INT32 code, void *v)
   	ofstream OutFile;
 	OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
+    OutFile << "Total number of instructions: " << number_of_instructions << endl;
+
     trie_total = trie_total + taint_store.wp.get_trie_data();
-    OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
+    OutFile << endl << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
     OutFile << "The number of total changes on top-level: " << trie_total.top_change << endl;
@@ -4426,7 +4437,7 @@ int main(int argc, char* argv[])
     PIN_AddSyscallExitFunction(instrument_syscall_exit, 0);
     // Register Instruction to be called to instrument instructions
     INS_AddInstrumentFunction(Instruction, 0);
-//    TRACE_AddInstrumentFunction(Trace, 0);
+    TRACE_AddInstrumentFunction(Trace, 0);
     //Start program
     PIN_StartProgram();
 }
