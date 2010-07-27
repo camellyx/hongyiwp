@@ -39,8 +39,13 @@ END_LEGAL */
 #include "pin.H"
 #include "auto_wp.h"
 
-//#define RANGE_CACHE
-//#define PAGE_TABLE
+#define RANGE_CACHE
+#define PAGE_TABLE
+
+// Force each thread's data to be in its own data cache line so that
+// multiple threads do not contend for the same data cache line.
+#define PADSIZE 56  // 64 byte line size: 64-8
+#define MEM_SIZE	0//(-1 & ~4194303)//0	// 0xffffffff as the max vertual memory address.
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
@@ -57,11 +62,14 @@ struct thread_wp_data_t
 {
 	MEM_WatchPoint<ADDRINT, UINT32> mem;
 	WatchPoint<ADDRINT, UINT32> wp;
+    UINT64 number_of_instructions;
+    UINT8 pad[PADSIZE];
 };
 
 map<THREADID,thread_wp_data_t*> thread_map;
 map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 
+UINT64 instruction_total;
 trie_data_t trie_total;
 #ifdef RANGE_CACHE
 range_data_t range_total;
@@ -77,14 +85,6 @@ KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
 
 PIN_LOCK init_lock;
 
-// Force each thread's data to be in its own data cache line so that
-// multiple threads do not contend for the same data cache line.
-// This avoids the false sharing problem.
-#define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	0//(-1 & ~4194303)//0	// 0xffffffff as the max vertual memory address.
-
-// key for accessing TLS storage in the threads. initialized once in main()
-
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
 	GetLock(&init_lock, threadid+1);//get LOCK
@@ -93,13 +93,13 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
 	thread_map[threadid] = this_thread;
-	//	cout << "Thread started" << endl;
 	ReleaseLock(&init_lock);//release lOCK
 }
 
 VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
     GetLock(&init_lock, threadid+1);//get LOCK
+    instruction_total += thread_map[threadid]->number_of_instructions;
 	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
 #ifdef RANGE_CACHE
 	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
@@ -113,19 +113,17 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     ReleaseLock(&init_lock);//release LOCK
 }
 
-// Print a memory read record
+// Prepare a memory read
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-    	//	cout << "In read fault" << endl;
     	thread_wp_data_t* object_thread;
 		GetLock(&init_lock, threadid+1);//get LOCK
 		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
 			if (thread_map_iter->first != threadid) {
 				object_thread = thread_map_iter->second;
 				if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					//	cout << "it is a clear!" << endl;
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					ReleaseLock(&init_lock);//release LOCK
@@ -136,27 +134,23 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 		
 		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
-//		(this_thread->wp).watch_print();
-		//	cout << "Out read fault" << endl;
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
 }
 
-// Print a memory write record
+// Prepare a memory write
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
 	thread_wp_data_t* this_thread = thread_map[threadid];
 
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-    	//	cout << "In write fault" << endl;
     	thread_wp_data_t* object_thread;
 	    GetLock(&init_lock, threadid+1);//get LOCK
 		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
 			if (thread_map_iter->first != threadid) {
 				object_thread = thread_map_iter->second;
 				if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					//	cout << "it is a clear!" << endl;
 					(this_thread->mem).clear();
 					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 					ReleaseLock(&init_lock);//release LOCK
@@ -167,11 +161,28 @@ VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, T
 		
 		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
 		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
-//		(this_thread->wp).watch_print();
-		//	cout << "Out write fault" << endl;
 		ReleaseLock(&init_lock);//release LOCK
 	}
 	return;
+}
+
+// This function is called before every block
+VOID PIN_FAST_ANALYSIS_CALL docount(ADDRINT c, THREADID tid)
+{
+    thread_map[tid]->number_of_instructions += c;
+}
+
+// Count the number of each specific instruction.
+VOID Trace(TRACE trace, VOID *v)
+{
+    // Visit every basic block  in the trace
+    for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+    {
+        // Insert a call to docount for every bbl, passing the number of instructions.
+        // IPOINT_ANYWHERE allows Pin to schedule the call anywhere in the bbl to obtain best performance.
+        BBL_InsertCall(bbl, IPOINT_ANYWHERE, (AFUNPTR)docount, IARG_FAST_ANALYSIS_CALL, IARG_UINT32, 
+                BBL_NumIns(bbl), IARG_THREAD_ID, IARG_END);
+    }
 }
 
 // Is called for every instruction and instruments reads and writes
@@ -220,7 +231,8 @@ VOID Fini(INT32 code, VOID *v)
 	ofstream OutFile;
 	OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
-    OutFile << "**Trie data: \n" << endl;
+    OutFile << "Total number of instructions: " << instruction_total << endl;
+    OutFile << endl << "**Trie data: \n" << endl;
     OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
     OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
     OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
@@ -301,6 +313,8 @@ int main(int argc, char * argv[])
     // Register ThreadStart to be called when a thread starts.
     PIN_AddThreadStartFunction(ThreadStart, 0);
     PIN_AddThreadFiniFunction(ThreadFini, 0);
+
+    TRACE_AddInstrumentFunction(Trace, 0);
 
     // Register Instruction to be called to instrument instructions.
     INS_AddInstrumentFunction(Instruction, 0);
