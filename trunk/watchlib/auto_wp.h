@@ -210,7 +210,7 @@ namespace Hongyi_WatchPoint {
 		void rm_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
         void invalidate_wlb (ADDRESS target_addr, ADDRESS target_size);
 		void add_watchpoint	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags);
-		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside);
+		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside, bool hit_miss_care);
 		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
 		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
 		
@@ -482,7 +482,7 @@ namespace Hongyi_WatchPoint{
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;//To prevent double counting for range cache hits.
 #endif
@@ -516,7 +516,7 @@ namespace Hongyi_WatchPoint{
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;
 #endif
@@ -549,7 +549,7 @@ namespace Hongyi_WatchPoint{
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;
 #endif
@@ -1229,12 +1229,14 @@ namespace Hongyi_WatchPoint{
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
+
+        // Removing an entire watchpoint is not an update, so we can ignore loading stuff into the lookaside buffer & range cache
 		
 		rm_watchpoint (target_addr, target_size, (WA_READ | WA_WRITE) );
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;
 #endif
@@ -1262,12 +1264,15 @@ namespace Hongyi_WatchPoint{
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
+
+        // Removing a read watchpoint is an update, which would require loading the original data into the lookaside buffer & range cache
+        general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_hit, trie.mid_hit, trie.bot_hit, true, true);
 		
 		rm_watchpoint (target_addr, target_size, WA_READ);
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;
 #endif
@@ -1295,12 +1300,15 @@ namespace Hongyi_WatchPoint{
 		end_iter = search_address(target_addr + target_size - 1, wp);
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
+
+        // Removing a write watchpoint is an update, which would require loading the original data into the lookaside buffer & range cache
+        general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_hit, trie.mid_hit, trie.bot_hit, true, true);
 		
 		rm_watchpoint (target_addr, target_size, WA_WRITE);
 #ifdef	RANGE_CACHE
 		range_data_t temp = range;
 #endif
-		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false);
+		general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_change, trie.mid_change, trie.bot_change, false, false);
 #ifdef	RANGE_CACHE
 		range = temp;
 #endif
@@ -1316,7 +1324,7 @@ namespace Hongyi_WatchPoint{
 	}
 	
 	template <class ADDRESS, class FLAGS>
-	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside) {
+	bool WatchPoint<ADDRESS, FLAGS>::general_fault (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside, bool hit_miss_care) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
         watchpoint_t<ADDRESS, FLAGS> temp_val;
         temp_val.addr = target_addr;
@@ -1373,7 +1381,8 @@ namespace Hongyi_WatchPoint{
             }
 			top_page++;
 #ifdef RANGE_CACHE
-			Range_load(0, -1, true);
+			Range_load(0, -1, hit_miss_care);
+            Range_cleanup();
 #endif
 			return (iter->flags & target_flags);
 		}
@@ -1435,14 +1444,14 @@ namespace Hongyi_WatchPoint{
                     wlb.push_front(temp_val);
                 }
 #ifdef RANGE_CACHE
-				Range_load(iter->addr + iter->size, -1, true);
+				Range_load(iter->addr + iter->size, -1, hit_miss_care);
 #endif
 			}
 			else {
                 // Empty watchpoint case.  We're both beginning and end.
                 // Range cache should cover all of memory with "no watchpoint"
 #ifdef RANGE_CACHE
-				Range_load(0, -1, true);
+				Range_load(0, -1, hit_miss_care);
 #endif
                 if (lookaside) {
                     // Lookaside agrees.  No watchpoints, so entry covers all memory.
@@ -1461,6 +1470,9 @@ namespace Hongyi_WatchPoint{
                 }
 				top_page++;
 			}
+#ifdef RANGE_CACHE
+            Range_cleanup();
+#endif
 			return false;
 		}
 
@@ -1498,17 +1510,17 @@ namespace Hongyi_WatchPoint{
 				if (iter == wp.begin() && iter->addr != 0) {
 					end_addr = iter->addr - 1;
 
-					Range_load (0, end_addr, true);
+					Range_load (0, end_addr, hit_miss_care);
 				}
 				else if (iter != wp.begin() && (iter - 1)->addr + (iter - 1)->size != iter->addr) {
 					beg_addr = (iter - 1)->addr + (iter - 1)->size;
 					end_addr = iter->addr - 1;
-					Range_load (beg_addr, end_addr, true);
+					Range_load (beg_addr, end_addr, hit_miss_care);
 				}
 			}
 			beg_addr = iter->addr;
 			end_addr = iter->addr + iter->size - 1;
-			Range_load(beg_addr, end_addr, true);
+			Range_load(beg_addr, end_addr, hit_miss_care);
 #endif
 
 #ifdef PAGE_TABLE
@@ -1568,11 +1580,11 @@ namespace Hongyi_WatchPoint{
 			else
 				end_addr = iter->addr - 1;
 
-			Range_load(beg_addr, end_addr, true);
+			Range_load(beg_addr, end_addr, hit_miss_care);
 		}
 		else if (iter == wp.begin() ) {
 			end_addr = iter->addr - 1;
-			Range_load(0, end_addr, true);
+			Range_load(0, end_addr, hit_miss_care);
 		}
 #endif
 
@@ -1640,6 +1652,9 @@ namespace Hongyi_WatchPoint{
                 wlb.pop_back();
             wlb.push_front(temp_val);
         }
+#ifdef RANGE_CACHE
+        Range_cleanup();
+#endif
 		
 		//	cout << "Exited general_fault" << endl;
 		return wp_fault;
@@ -1647,17 +1662,17 @@ namespace Hongyi_WatchPoint{
 
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::watch_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_hit, trie.mid_hit, trie.bot_hit, true) );
+		return (general_fault (target_addr, target_size, (WA_READ | WA_WRITE), trie.top_hit, trie.mid_hit, trie.bot_hit, true, true) );
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::read_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_READ, trie.top_hit, trie.mid_hit, trie.bot_hit, true) );
+		return (general_fault (target_addr, target_size, WA_READ, trie.top_hit, trie.mid_hit, trie.bot_hit, true, true) );
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	bool WatchPoint<ADDRESS, FLAGS>::write_fault(ADDRESS target_addr, ADDRESS target_size) {
-		return (general_fault (target_addr, target_size, WA_WRITE, trie.top_hit, trie.mid_hit, trie.bot_hit, true) );
+		return (general_fault (target_addr, target_size, WA_WRITE, trie.top_hit, trie.mid_hit, trie.bot_hit, true, true) );
 	}
 	
 	template <class ADDRESS, class FLAGS>
@@ -1745,7 +1760,7 @@ namespace Hongyi_WatchPoint{
 			}
 			else {
 				end_addr = iter->addr - 1;
-				range_cache_iter = Range_load(start_addr, end_addr, true);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				if (modify_t.addr == start_addr) {
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
@@ -1757,7 +1772,7 @@ namespace Hongyi_WatchPoint{
 		
 		start_addr = iter->addr;
 		end_addr = iter->addr + iter->size - 1;
-		range_cache_iter = Range_load(start_addr, end_addr, true);
+		range_cache_iter = Range_load(start_addr, end_addr, false);
 		range_cache_iter->start_addr = modify_t.addr;
 		range_cache_iter->end_addr = modify_t.addr + modify_t.size - 1;
 		
@@ -1775,7 +1790,7 @@ namespace Hongyi_WatchPoint{
 			}
 			else {
 				start_addr = iter->addr + iter->size;
-				range_cache_iter = Range_load(start_addr, end_addr, true);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				if (modify_t.addr + modify_t.size - 1 == end_addr) {
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
