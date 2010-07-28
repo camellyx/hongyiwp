@@ -18,6 +18,8 @@
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
 
+// XXX TODO FIXME JLGREATH Make sure MEM_WatchPoint code does the same thing as WatchPoint code.. we've fixed WatchPoint a lot I think JLGREATH FIXME TODO XXX //
+
 using std::cout;
 using std::endl;
 using std::deque;
@@ -1341,6 +1343,11 @@ namespace Hongyi_WatchPoint{
                     trie.wlb_miss_top++;
                 }
             }
+#ifdef RANGE_CACHE
+            // TODO: We need to find a way to just "always hit" in the range cache.
+            //Range_load(0, -1, hit_miss_care);
+            //Range_cleanup();
+#endif
 			return false;
 		}
 
@@ -1703,7 +1710,6 @@ namespace Hongyi_WatchPoint{
 	template <class ADDRESS, class FLAGS>
 	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Insert_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
 #ifdef RANGE_CACHE
-		//	cout << "Entered Insert_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		range_t<ADDRESS>	insert_range;
@@ -1733,17 +1739,16 @@ namespace Hongyi_WatchPoint{
 		}
 #endif
 		iter = wp.insert(iter, insert_wp);
-		//	cout << "Exited Insert_wp" << endl;
 		return iter;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::Modify_wp (const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
 #ifdef RANGE_CACHE
-		//	cout << "Entered Modify_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		range_t<ADDRESS>	insert_range;
+        bool delay_insert = false;
 		typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
 		
 		if (modify_t.addr != iter->addr) {
@@ -1752,20 +1757,26 @@ namespace Hongyi_WatchPoint{
 			else
 				start_addr = 0;
 			if (start_addr == iter->addr) {
+                // There are no non-watched ranges between the two watchpoint regions, and thus their flags are different.
+                // Because of this, we need to add a new region into the system that contains our "shrink" of the beginning if iter.
 				insert_range.end_addr = modify_t.addr - 1;
 				insert_range.start_addr = start_addr;
-				range_cache_iter = range_cache.begin();
-				range_cache.insert(range_cache_iter, insert_range);
+				//range_cache_iter = range_cache.begin();
+				//range_cache.insert(range_cache_iter, insert_range);
+                // Delay this insertion so that the Range_load() below so it doesn't detect this range instead!
+                delay_insert = true;
 				range.cur_range_num++;
 			}
-			else {
+			else { 
+                // There are non-watched ranges bewteen the two watchpoints.
 				end_addr = iter->addr - 1;
-				range_cache_iter = Range_load(start_addr, end_addr, false);
+				range_cache_iter = Range_load(start_addr, end_addr, false); // Find that non-watched range
 				if (modify_t.addr == start_addr) {
+                    // If the address it starts on is the modified range's beginning, it goes away.
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
 				}
-				else
+				else // else it just changes size.
 					range_cache_iter->end_addr = modify_t.addr - 1;
 			}
 		}
@@ -1775,13 +1786,19 @@ namespace Hongyi_WatchPoint{
 		range_cache_iter = Range_load(start_addr, end_addr, false);
 		range_cache_iter->start_addr = modify_t.addr;
 		range_cache_iter->end_addr = modify_t.addr + modify_t.size - 1;
+        if (delay_insert) {
+            range_cache_iter = range_cache.begin();
+            range_cache.insert(range_cache_iter, insert_range);
+        }
 		
 		if (iter->addr + iter->size != modify_t.addr + modify_t.size) {
+            // End also changed.  We'll need to modify the range after us.
 			if (iter != (wp.end() - 1) )
 				end_addr = -1;
 			else
 				end_addr = (iter + 1)->addr - 1;
 			if (end_addr == iter->addr + iter->size - 1) {
+                // The old end touched the guy after him, so no watchpoints in between them.  We need to insert a new range between the two.
 				insert_range.start_addr = modify_t.addr + modify_t.size;
 				insert_range.end_addr = end_addr;
 				range_cache_iter = range_cache.begin();
@@ -1789,13 +1806,15 @@ namespace Hongyi_WatchPoint{
 				range.cur_range_num++;
 			}
 			else {
+                // There were non-watched ranges between the two watchpoints, so we just need to move that range's beginning.
 				start_addr = iter->addr + iter->size;
 				range_cache_iter = Range_load(start_addr, end_addr, false);
 				if (modify_t.addr + modify_t.size - 1 == end_addr) {
+                    // If the address it startedon is on is the modified range's end, it goes away.
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
 				}
-				else
+				else // Else it just changes size.
 					range_cache_iter->start_addr = modify_t.addr + modify_t.size;
 			}
 		}
@@ -1803,14 +1822,12 @@ namespace Hongyi_WatchPoint{
 		iter->addr = modify_t.addr;
 		iter->size = modify_t.size;
 		iter->flags = modify_t.flags;
-		//	cout << "Exited Insert_wp" << endl;
 		return;
 	}
 	
 	template <class ADDRESS, class FLAGS>	
 	void WatchPoint<ADDRESS, FLAGS>::Push_back_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp) {
 #ifdef RANGE_CACHE
-		//	cout << "Entered Push_back_wp" << endl;
 		ADDRESS		start_addr;
 		range_t<ADDRESS>	insert_range;
 		typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
@@ -1858,14 +1875,12 @@ namespace Hongyi_WatchPoint{
 		}
 #endif
 		wp.push_back(insert_wp);
-		//	cout << "Exit Push_back_wp" << endl;
 		return;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque< watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Erase_wp (typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter) {
 #ifdef RANGE_CACHE
-		//	cout << "Entered Erase_wp" << endl;
 		ADDRESS		start_addr;
 		ADDRESS		end_addr;
 		ADDRESS		ulti_start_addr;
@@ -1916,13 +1931,11 @@ namespace Hongyi_WatchPoint{
 #endif
 		iter = wp.erase(iter);
 		return iter;
-		//	cout << "Exit Erase_wp" << endl;
 	}
 	
 #ifdef RANGE_CACHE
 	template <class ADDRESS, class FLAGS>
 	typename deque< range_t<ADDRESS> >::iterator WatchPoint<ADDRESS, FLAGS>::Range_load (ADDRESS start_addr, ADDRESS end_addr, bool hit_miss_care) {
-		//	cout << "Range_load in" << endl;
 		bool				find = false;
 		typename deque< range_t<ADDRESS> >::iterator	iter;
 		range_t<ADDRESS>	insert_range;
@@ -1946,7 +1959,6 @@ namespace Hongyi_WatchPoint{
 		}
 		iter = range_cache.begin();
 		iter = range_cache.insert(iter, insert_range);
-		//	cout << "Range_load out" << endl;
 		return iter;
 	}
 #endif
