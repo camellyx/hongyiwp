@@ -68,12 +68,12 @@ namespace Hongyi_WatchPoint {
 #ifdef RANGE_CACHE
 	struct range_data_t {
 		unsigned long long max_range_num;
-		double avg_range_num;
 		unsigned long long cur_range_num;
 		unsigned long long changes;
 		unsigned long long hit;
 		unsigned long long miss;
 		unsigned long long kick;
+        unsigned int avg_range_num;
 		
 		const range_data_t operator+(const range_data_t &other) const;
 		range_data_t();
