@@ -248,7 +248,9 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 #endif
                     }
                 }
+#ifdef RANGE_CACHE
                 total_max_range_num.push_back( (child_mem_ptr->range).max_range_num);
+#endif
             }
             child_mem_ptr = *child_iter; // begin() base case
             root_mem_data.total_instructions += child_mem_ptr->total_instructions;
