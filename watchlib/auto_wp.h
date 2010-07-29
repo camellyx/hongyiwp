@@ -1975,7 +1975,8 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		range.changes++;
-		range.avg_range_num += (range.cur_range_num - (double)range.avg_range_num) / range.changes;
+		//range.avg_range_num += (range.cur_range_num - (double)range.avg_range_num) / range.changes;
+        range.avg_range_num = ((range.avg_range_num)*(range.changes-1) + range.cur_range_num) / range.changes;
 		
 		if (range.cur_range_num > range.max_range_num)
 			range.max_range_num = range.cur_range_num;
