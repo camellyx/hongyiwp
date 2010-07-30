@@ -4339,7 +4339,8 @@ void Fini(INT32 code, void *v)
 #ifdef RANGE_CACHE
 	range_total = range_total + taint_store.wp.get_range_data();
 	OutFile << endl << "**Range_cache data: \n" << endl;
-    OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
+    //OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
+    OutFile << "The number of average ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
     OutFile << "The number of miss in the system: " << range_total.miss << endl;
     OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;

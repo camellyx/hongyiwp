@@ -71,12 +71,16 @@ map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 
 UINT64 instruction_total;
 trie_data_t trie_total;
+deque<trie_data_t> total_trie_data;
 #ifdef RANGE_CACHE
 range_data_t range_total;
 deque<unsigned long long> total_max_range_num;
+deque<unsigned long long> total_avg_range_num;
+deque<range_data_t> total_range_data;
 #endif
 #ifdef PAGE_TABLE
 pagetable_data_t pagetable_total;
+deque<pagetable_data_t> total_pagetable_data;
 #endif
 
 //My own data
@@ -101,12 +105,16 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     GetLock(&init_lock, threadid+1);//get LOCK
     instruction_total += thread_map[threadid]->number_of_instructions;
 	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
+    total_trie_data.push_back( (thread_map[threadid]->wp).get_trie_data() );
 #ifdef RANGE_CACHE
 	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
 	total_max_range_num.push_back( ( (thread_map[threadid]->wp).get_range_data() ).max_range_num );
+    total_avg_range_num.push_back( range_total.total_cur_range_num/range_total.changes );
+    total_range_data.push_back( range_total );
 #endif
 #ifdef PAGE_TABLE
 	pagetable_total = pagetable_total + (thread_map[threadid]->wp).get_pagetable_data();
+    total_pagetable_data.push_back( (thread_map[threadid]->wp).get_pagetable_data());
 #endif
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
@@ -249,23 +257,65 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total WLB top-level misses: " << trie_total.wlb_miss_top << endl;
     OutFile << "The number of total WLB mid-level misses: " << trie_total.wlb_miss_mid << endl;
     OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl;
+    OutFile << endl;
+    deque<trie_data_t>::iterator trie_iter;
+    for (trie_iter = total_trie_data.begin(); trie_iter != total_trie_data.end(); trie_iter++) {
+        OutFile << "The number of top-level hits for this thread: " << trie_iter->top_hit << endl;
+        OutFile << "The number of mid-level hits for this thread: " << trie_iter->mid_hit << endl;
+        OutFile << "The number of bot-level hits for this thread: " << trie_iter->bot_hit << endl;
+        OutFile << "The number of top-level changes for this thread: " << trie_iter->top_change << endl;
+        OutFile << "The number of mid-level changes for this thread: " << trie_iter->mid_change << endl;
+        OutFile << "The number of bot-level changes for this thread: " << trie_iter->bot_change << endl;
+        OutFile << "The number of top-level breaks for this thread: " << trie_iter->top_break << endl;
+        OutFile << "The number of mid-level breaks for this thread: " << trie_iter->mid_break << endl;
+        OutFile << "The number of top-level WLB hits for this thread: " << trie_iter->wlb_hit_top << endl;
+        OutFile << "The number of mid-level WLB hits for this thread: " << trie_iter->wlb_hit_mid << endl;
+        OutFile << "The number of bot-level WLB hits for this thread: " << trie_iter->wlb_hit_bot << endl;
+        OutFile << "The number of top-level WLB miss for this thread: " << trie_iter->wlb_miss_top << endl;
+        OutFile << "The number of mid-level WLB miss for this thread: " << trie_iter->wlb_miss_mid << endl;
+        OutFile << "The number of bot-level WLB miss for this thread: " << trie_iter->wlb_miss_bot << endl << endl;
+    }
 #ifdef RANGE_CACHE
     OutFile << endl << "**Range_cache data: " << endl;
-    OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
+    OutFile << "The number of average ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
     OutFile << "The number of hits in the system: " << range_total.hit << endl;
     OutFile << "The number of miss in the system: " << range_total.miss << endl;
     OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
     OutFile << "Below are max_range_num for each thread: " << endl;
     
     deque<unsigned long long>::iterator iter;
+    deque<range_data_t>::iterator range_iter;
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
     	OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
+
+    OutFile << endl;
+
+    for (iter = total_avg_range_num.begin(); iter != total_avg_range_num.end(); iter++) {
+        OutFile << "The avg_range_num for this thread is: " << *iter << endl;
+    }
+
+    OutFile << endl;
+
+    for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
+        OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
+        OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
+        OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
+    }
+
 #endif
 #ifdef PAGE_TABLE
+    deque<pagetable_data_t>::iterator pagetable_iter;
 	OutFile << endl << "**PageTable data: " << endl;
 	OutFile << "The number of accesses to a page marked as watched: " << pagetable_total.access << endl;
 	OutFile << "The number of accesses to a real watchpoint: " << pagetable_total.wp_hit << endl;
+    
+    OutFile << endl;
+
+    for (pagetable_iter = total_pagetable_data.begin(); pagetable_iter != total_pagetable_data.end(); pagetable_iter++) {
+        OutFile << "The number of accesses to paged marked in this thread: " << pagetable_iter->access << endl;
+        OutFile << "The number of accesses to real watchpoint in this thread: " << pagetable_iter->wp_hit << endl;
+    }
 #endif
 ////////////////////////Out put the data collected
 
