@@ -68,6 +68,7 @@ namespace Hongyi_WatchPoint {
 #ifdef RANGE_CACHE
 	struct range_data_t {
 		unsigned long long max_range_num;
+        unsigned long long total_cur_range_num;
 		unsigned long long cur_range_num;
 		unsigned long long changes;
 		unsigned long long hit;
@@ -133,7 +134,7 @@ namespace Hongyi_WatchPoint {
 	const range_data_t range_data_t::operator+(const range_data_t &other) const {
 		range_data_t result = *this;
         result.max_range_num += other.max_range_num;
-		result.avg_range_num = ( (result.avg_range_num * result.changes) + (other.avg_range_num * other.changes) ) / ( (result.changes + other.changes) );
+        result.total_cur_range_num += other.total_cur_range_num;
         result.cur_range_num += other.cur_range_num;
 		result.changes += other.changes;
 		result.hit += other.hit;
@@ -144,7 +145,7 @@ namespace Hongyi_WatchPoint {
 	
 	range_data_t::range_data_t() {
 		max_range_num = 1;
-		avg_range_num = 1;
+        total_cur_range_num = 1;
 		cur_range_num = 1;
 		changes = 1;
 		hit = 0;
@@ -1975,8 +1976,7 @@ namespace Hongyi_WatchPoint{
 			}
 		}
 		range.changes++;
-		//range.avg_range_num += (range.cur_range_num - (double)range.avg_range_num) / range.changes;
-        range.avg_range_num = ((range.avg_range_num)*(range.changes-1) + range.cur_range_num) / range.changes;
+        range.total_cur_range_num += range.cur_range_num;
 		
 		if (range.cur_range_num > range.max_range_num)
 			range.max_range_num = range.cur_range_num;

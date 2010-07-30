@@ -61,6 +61,14 @@ struct	thread_mem_data_t {
 #endif
 };
 
+deque<trie_data_t> total_trie_data;
+#ifdef RANGE_CACHE
+deque<range_data_t> total_range_data;
+#endif
+#ifdef PAGE_TABLE
+deque<pagetable_data_t> total_pagetable_data;
+#endif
+
 struct thread_wp_data_t
 {
 	//As a parent:
@@ -210,11 +218,14 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                 // The total number of trie/range misses sets etc the system sees is at least how many happened in each child thread.
                 root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                 root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
+                total_trie_data.push_back( child_mem_ptr->trie );
 #ifdef RANGE_CACHE
                 root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
+                total_range_data.push_back( child_mem_ptr->range );
 #endif
 #ifdef PAGE_TABLE
                 root_mem_data.pagetable = root_mem_data.pagetable + child_mem_ptr->pagetable;
+                total_pagetable_data.push_back( child_mem_ptr->pagetable );
 #endif
                 for (compare_iter = child_iter - 1;
                         compare_iter != (thread_map[this_parent_threadid]->child_data).begin();
@@ -226,11 +237,14 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                         did_conflict = true;
                         root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                         root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
+                        *(total_trie_data.end()-1) = *(total_trie_data.end()-1) + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
                         root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
+                        *(total_range_data.end()-1) = *(total_range_data.end()-1) + child_mem_ptr->range;
 #endif
 #ifdef PAGE_TABLE
                         root_mem_data.pagetable = root_mem_data.pagetable + child_mem_ptr->pagetable;
+                        *(total_pagetable_data.end()-1) = *(total_pagetable_data.end()-1) + child_mem_ptr->pagetable;
 #endif
                         break;
                     }
@@ -240,11 +254,14 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
                     if (thread_commit_data_conflict(parent_mem_ptr->mem, child_mem_ptr->mem)) {
                         root_mem_data.total_instructions += child_mem_ptr->total_instructions;
                         root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
+                        *(total_trie_data.end()-1) = *(total_trie_data.end()-1) + child_mem_ptr->trie;
 #ifdef RANGE_CACHE
                         root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
+                        *(total_range_data.end()-1) = *(total_range_data.end()-1) + child_mem_ptr->range;
 #endif
 #ifdef PAGE_TABLE
                         root_mem_data.pagetable = root_mem_data.pagetable + child_mem_ptr->pagetable;
+                        *(total_pagetable_data.end()-1) = *(total_pagetable_data.end()-1) + child_mem_ptr->pagetable;
 #endif
                     }
                 }
@@ -255,12 +272,15 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
             child_mem_ptr = *child_iter; // begin() base case
             root_mem_data.total_instructions += child_mem_ptr->total_instructions;
             root_mem_data.trie = root_mem_data.trie + child_mem_ptr->trie;
+            total_trie_data.push_back( child_mem_ptr->trie );
 #ifdef RANGE_CACHE
             root_mem_data.range = root_mem_data.range + child_mem_ptr->range;
             total_max_range_num.push_back( (child_mem_ptr->range).max_range_num);
+            total_range_data.push_back( child_mem_ptr->range );
 #endif
 #ifdef PAGE_TABLE
             root_mem_data.pagetable = root_mem_data.pagetable + child_mem_ptr->pagetable;
+            total_pagetable_data.push_back( child_mem_ptr->pagetable );
 #endif
 
             // Thread information cleanup.
@@ -445,10 +465,29 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total WLB top-level misses: " << root_mem_data.trie.wlb_miss_top << endl;
     OutFile << "The number of total WLB mid-level misses: " << root_mem_data.trie.wlb_miss_mid << endl;
     OutFile << "The number of total WLB bot-level misses: " << root_mem_data.trie.wlb_miss_bot << endl;
+
+    deque<trie_data_t>::iterator trie_iter;
+    for (trie_iter = total_trie_data.begin(); trie_iter != total_trie_data.end(); trie_iter++) {
+        OutFile << "The number of top-level hits for this thread: " << trie_iter->top_hit << endl;
+        OutFile << "The number of mid-level hits for this thread: " << trie_iter->mid_hit << endl;
+        OutFile << "The number of bot-level hits for this thread: " << trie_iter->bot_hit << endl;
+        OutFile << "The number of top-level changes for this thread: " << trie_iter->top_change << endl;
+        OutFile << "The number of mid-level changes for this thread: " << trie_iter->mid_change << endl;
+        OutFile << "The number of bot-level changes for this thread: " << trie_iter->bot_change << endl;
+        OutFile << "The number of top-level breaks for this thread: " << trie_iter->top_break << endl;
+        OutFile << "The number of mid-level breaks for this thread: " << trie_iter->mid_break << endl;
+        OutFile << "The number of top-level WLB hits for this thread: " << trie_iter->wlb_hit_top << endl;
+        OutFile << "The number of mid-level WLB hits for this thread: " << trie_iter->wlb_hit_mid << endl;
+        OutFile << "The number of bot-level WLB hits for this thread: " << trie_iter->wlb_hit_bot << endl;
+        OutFile << "The number of top-level WLB miss for this thread: " << trie_iter->wlb_miss_top << endl;
+        OutFile << "The number of mid-level WLB miss for this thread: " << trie_iter->wlb_miss_mid << endl;
+        OutFile << "The number of bot-level WLB miss for this thread: " << trie_iter->wlb_miss_bot << endl;
+    }
    
 #ifdef RANGE_CACHE 
     OutFile << endl << "**Range_cache data: " << endl;
-    OutFile << "The number of average ranges in the system: " << root_mem_data.range.avg_range_num << endl;
+    //OutFile << "The number of average ranges in the system: " << root_mem_data.range.avg_range_num << endl;
+    OutFile << "The number of average ranges in the system: " << ((double)root_mem_data.range.total_cur_range_num/root_mem_data.range.changes) << endl;
     OutFile << "The number of hits in the system: " << root_mem_data.range.hit << endl;
     OutFile << "The number of miss in the system: " << root_mem_data.range.miss << endl;
     OutFile << "The number of range kickouts in the system: " << root_mem_data.range.kick << endl << endl;
@@ -458,11 +497,28 @@ VOID Fini(INT32 code, VOID *v)
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
     	OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
+    
+    OutFile << endl;
+
+    deque<range_data_t>::iterator range_iter;
+    for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
+        OutFile << "The avg_range_num for this thread is:  " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
+        OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
+        OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
+        OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
+    }
 #endif
 #ifdef PAGE_TABLE
     OutFile << endl << "**PageTable data: " << endl;
     OutFile << "The number of accesses to a page marked as watched: " << root_mem_data.pagetable.access << endl;
     OutFile << "The number of accesses to a real watchpoint: " << root_mem_data.pagetable.wp_hit << endl;
+        OutFile << endl;
+
+    deque<pagetable_data_t>::iterator pagetable_iter;
+    for (pagetable_iter = total_pagetable_data.begin(); pagetable_iter != total_pagetable_data.end(); pagetable_iter++) {
+        OutFile << "The number of accesses to paged marked in this thread: " << pagetable_iter->access;
+        OutFile << "The number of accesses to real watchpoint in this thread: " << pagetable_iter->wp_hit;
+    }
 #endif
 ////////////////////////Out put the data collected
     OutFile.close();
