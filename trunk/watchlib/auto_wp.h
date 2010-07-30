@@ -216,6 +216,7 @@ namespace Hongyi_WatchPoint {
 		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside, bool hit_miss_care);
 		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
 		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
+		void page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2)
 		
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator	Insert_wp	(const watchpoint_t<ADDRESS, FLAGS>& insert_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);//This would call wp.insert() internally and forward the return value out. But meanwhile it would emulate range cache access
 		void														Modify_wp	(const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);//This would change the value of iter's node. And emualte range cache_access
@@ -466,11 +467,21 @@ namespace Hongyi_WatchPoint{
 			trie.mid_break++;
 		return;
 	}
+	
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
+		if (before == TOP && (after_1 != TOP || after_2 != TOP) )
+			trie.top_break++;
+		else if (before == MID && (after_1 == BOT || after_2 == BOT) )
+			trie.mid_break++;
+		return;
+	}
 		
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::add_watch_wp (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;//This flag would check if both beg_addr and end_addr fall into the same RANGE(both watched or unwatched and beg_iter = end_iter)
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -478,6 +489,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
@@ -495,8 +508,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		
 		return;
 	}
@@ -505,6 +522,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::add_read_wp (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -512,6 +530,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
@@ -529,8 +549,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		return;
 	}
 	
@@ -538,6 +562,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::add_write_wp (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -545,6 +570,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 		
@@ -562,8 +589,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		return;
 	}
 	
@@ -1223,6 +1254,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::rm_watch (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -1230,6 +1262,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 
@@ -1249,8 +1283,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		return;
 	}
 	
@@ -1258,6 +1296,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::rm_read (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -1265,6 +1304,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 
@@ -1285,8 +1326,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		return;
 	}
 	
@@ -1294,6 +1339,7 @@ namespace Hongyi_WatchPoint{
 	void WatchPoint<ADDRESS, FLAGS>::rm_write (ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator beg_iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator end_iter;
+		bool same_range_flag = false;
 		PAGE_HIT begin_hit_before;
 		PAGE_HIT end_hit_before;
 		PAGE_HIT begin_hit_after;
@@ -1301,6 +1347,8 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
+		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
 
@@ -1321,8 +1369,12 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		page_break (begin_hit_before, begin_hit_after);
-		page_break (end_hit_before, end_hit_after);
+		if (same_range_flag)
+			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		else {
+			page_break (begin_hit_before, begin_hit_after);
+			page_break (end_hit_before, end_hit_after);
+		}
 		return;
 	}
 	
