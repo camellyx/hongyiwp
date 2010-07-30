@@ -216,7 +216,8 @@ namespace Hongyi_WatchPoint {
 		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside, bool hit_miss_care);
 		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
 		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
-		void page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
+		void page_break_same_top (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
+		void page_break_same_mid (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
 		
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator	Insert_wp	(const watchpoint_t<ADDRESS, FLAGS>& insert_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);//This would call wp.insert() internally and forward the return value out. But meanwhile it would emulate range cache access
 		void														Modify_wp	(const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);//This would change the value of iter's node. And emualte range cache_access
@@ -468,12 +469,27 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
+	//If start_addr and end_addr are in the same mid, then any break could happen once.
 	template <class ADDRESS, class FLAGS>
-	void WatchPoint<ADDRESS, FLAGS>::page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
+	void WatchPoint<ADDRESS, FLAGS>::page_break_same_mid (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
 		if (before == TOP && (after_1 != TOP || after_2 != TOP) )
 			trie.top_break++;
 		else if (before == MID && (after_1 == BOT || after_2 == BOT) )
 			trie.mid_break++;
+		return;
+	}
+	
+	//If start_addr and end_addr share the same top but not the same mid, then top break can happen once but mid break may happen twice!
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::page_break_same_top (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
+		if (before == TOP && (after_1 != TOP || after_2 != TOP) )
+			trie.top_break++;
+		else if (before == MID) {
+			if (after_1 == BOT)
+				trie.mid_break++;
+			if (after_2 == BOT)
+				trie.mid_break++;
+		}
 		return;
 	}
 		
@@ -489,7 +505,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -508,8 +524,10 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
@@ -530,7 +548,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -549,12 +567,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -570,7 +591,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -589,12 +610,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1262,7 +1286,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1283,12 +1307,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1304,7 +1331,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1326,12 +1353,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1347,7 +1377,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1369,12 +1399,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
