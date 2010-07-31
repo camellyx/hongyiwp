@@ -125,27 +125,13 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     deque<THREADID>::iterator iter;
     GetLock(&init_lock, threadid+1);//get LOCK
     AddThreadData(thread_map[threadid]);
-#if 0
-    instruction_total += thread_map[threadid]->number_of_instructions;
-	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
-    total_trie_data.push_back( (thread_map[threadid]->wp).get_trie_data() );
-#ifdef RANGE_CACHE
-	range_total = range_total + (thread_map[threadid]->wp).get_range_data();
-	total_max_range_num.push_back( ( (thread_map[threadid]->wp).get_range_data() ).max_range_num );
-    total_avg_range_num.push_back( range_total.total_cur_range_num/range_total.changes );
-    total_range_data.push_back( range_total );
-#endif
-#ifdef PAGE_TABLE
-	pagetable_total = pagetable_total + (thread_map[threadid]->wp).get_pagetable_data();
-    total_pagetable_data.push_back( (thread_map[threadid]->wp).get_pagetable_data());
-#endif
-#endif
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
     for(iter = live_threads.begin(); iter != live_threads.end(); iter++) {
-        if(*iter == threadid)
+        if(*iter == threadid) {
             live_threads.erase(iter);
-        break;
+            break;
+        }
     }
     ReleaseLock(&init_lock);//release LOCK
 }
