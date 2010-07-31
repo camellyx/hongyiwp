@@ -69,6 +69,8 @@ struct thread_wp_data_t
 map<THREADID,thread_wp_data_t*> thread_map;
 map<THREADID,thread_wp_data_t*>::iterator thread_map_iter;
 
+deque<THREADID> live_threads;
+
 UINT64 instruction_total;
 trie_data_t trie_total;
 deque<trie_data_t> total_trie_data;
@@ -97,12 +99,33 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
 	thread_map[threadid] = this_thread;
+    live_threads.push_back(threadid);
 	ReleaseLock(&init_lock);//release lOCK
+}
+
+VOID AddThreadData(thread_wp_data_t* thread_to_add)
+{
+    instruction_total += thread_to_add->number_of_instructions;
+    trie_total = trie_total + (thread_to_add->wp).get_trie_data();
+    total_trie_data.push_back( (thread_to_add->wp).get_trie_data() );
+#ifdef RANGE_CACHE
+    range_total = range_total + (thread_to_add->wp).get_range_data();
+    total_max_range_num.push_back( ( (thread_to_add->wp).get_range_data() ).max_range_num );
+    total_avg_range_num.push_back( ((thread_to_add->wp).get_range_data()).total_cur_range_num / ((thread_to_add->wp).get_range_data()).changes );
+    total_range_data.push_back( range_total );
+#endif
+#ifdef PAGE_TABLE
+    pagetable_total = pagetable_total + (thread_to_add->wp).get_pagetable_data();
+    total_pagetable_data.push_back( (thread_to_add->wp).get_pagetable_data() );
+#endif
 }
 
 VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
+    deque<THREADID>::iterator iter;
     GetLock(&init_lock, threadid+1);//get LOCK
+    AddThreadData(thread_map[threadid]);
+#if 0
     instruction_total += thread_map[threadid]->number_of_instructions;
 	trie_total = trie_total + (thread_map[threadid]->wp).get_trie_data();//get data out;
     total_trie_data.push_back( (thread_map[threadid]->wp).get_trie_data() );
@@ -116,8 +139,14 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 	pagetable_total = pagetable_total + (thread_map[threadid]->wp).get_pagetable_data();
     total_pagetable_data.push_back( (thread_map[threadid]->wp).get_pagetable_data());
 #endif
+#endif
 	delete thread_map[threadid];
 	thread_map.erase (threadid);
+    for(iter = live_threads.begin(); iter != live_threads.end(); iter++) {
+        if(*iter == threadid)
+            live_threads.erase(iter);
+        break;
+    }
     ReleaseLock(&init_lock);//release LOCK
 }
 
@@ -236,6 +265,10 @@ VOID Instruction(INS ins, VOID *v)
 // This function is called when the application exits
 VOID Fini(INT32 code, VOID *v)
 {
+    deque<THREADID>::iterator live_iter;
+    for(live_iter = live_threads.begin(); live_iter != live_threads.end(); live_iter++) {
+        AddThreadData(thread_map[*live_iter]);
+    }
 	ofstream OutFile;
 	OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
