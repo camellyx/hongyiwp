@@ -131,7 +131,6 @@ VOID Prefetch0Call(THREADID threadid)
     thread_wp_data_t*   this_thread = thread_map[this_threadid];
     this_thread->children_skipped_kill = false;
     this_thread->sibling_skipped_kill = false;
-    deque<thread_mem_data_t*>::iterator child_iter;
 
     if (!this_thread->root) {
         thread_wp_data_t* parent_thread = thread_map[this_thread->parent_threadid];
