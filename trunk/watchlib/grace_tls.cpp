@@ -48,13 +48,13 @@ using namespace Hongyi_WatchPoint;
 
 deque<unsigned long long> total_max_range_num;
 
-struct	thread_mem_data_t {
+struct  thread_mem_data_t {
     //This data will not vanish as the thread exit. It would be delete only after parent thread has stopped.
-	MEM_WatchPoint<ADDRINT, UINT32> mem;
+    MEM_WatchPoint<ADDRINT, UINT32> mem;
     UINT64          total_instructions;
-	trie_data_t		trie;
+    trie_data_t     trie;
 #ifdef RANGE_CACHE
-	range_data_t	range;
+    range_data_t    range;
 #endif
 #ifdef PAGE_TABLE
     pagetable_data_t pagetable;
@@ -71,27 +71,27 @@ deque<pagetable_data_t> total_pagetable_data;
 
 struct thread_wp_data_t
 {
-	//As a parent:
-	INT32						child_thread_num; //check if all child thread has finished.
-	deque<thread_mem_data_t*>	child_data;
+    //As a parent:
+    INT32                       child_thread_num; //check if all child thread has finished.
+    deque<thread_mem_data_t*>   child_data;
     deque<OS_THREAD_ID>         children_thread_ids;
-	//As a child:
-	OS_THREAD_ID				parent_threadid; //this points to its parent thread
-	thread_mem_data_t*			self_mem_ptr; //points to its own data, which is stored by its parent.
-	//As a thread itself:
-	bool						root; //this tells whether if the the thread is root. Well if it's the root thread then parent_thread_id would be invalid.
+    //As a child:
+    OS_THREAD_ID                parent_threadid; //this points to its parent thread
+    thread_mem_data_t*          self_mem_ptr; //points to its own data, which is stored by its parent.
+    //As a thread itself:
+    bool                        root; //this tells whether if the the thread is root. Well if it's the root thread then parent_thread_id would be invalid.
     bool                        has_had_children;
     bool                        has_had_siblings;
     bool                        children_skipped_kill;
     bool                        sibling_skipped_kill;
-	WatchPoint<ADDRINT, UINT32>	wp;
+    WatchPoint<ADDRINT, UINT32> wp;
 };
 
 INT32 thread_num = 0;//Well this is the only thing to determine whether if a thread is a root or not. If thread_num = 0. Then the thread is a root.
-thread_mem_data_t	root_mem_data;//This is where root store its data(root has no parents)
+thread_mem_data_t   root_mem_data;//This is where root store its data(root has no parents)
 
-map<OS_THREAD_ID,thread_wp_data_t*>				thread_map;
-map<OS_THREAD_ID,thread_wp_data_t*>::iterator	thread_map_iter;
+map<OS_THREAD_ID,thread_wp_data_t*>             thread_map;
+map<OS_THREAD_ID,thread_wp_data_t*>::iterator   thread_map_iter;
 
 //My own data
 KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
@@ -103,30 +103,30 @@ PIN_LOCK init_lock;
 // multiple threads do not contend for the same data cache line.
 // This avoids the false sharing problem.
 #define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	0	// 0xffffffff as the max vertual memory address.
-				
+#define MEM_SIZE    0   // 0xffffffff as the max vertual memory address.
+                
 bool thread_commit_data_conflict(MEM_WatchPoint<ADDRINT, UINT32>& sibling_mem, MEM_WatchPoint<ADDRINT, UINT32>& this_mem) {
-	watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
-	(this_mem).DumpStart();//It would get read to dump all the "read/write set" out;
-	while (!(this_mem).DumpEnd() ) {
-		temp = (this_mem).Dump();//This would dump out all the wp one by one.
-		if (temp.flags & WA_WRITE) {//If this is a write, then check both read and write.
-			if (sibling_mem.watch_fault(temp.addr, temp.size) )
-				return true;
-		}
-		if (temp.flags & WA_READ) {//If this is a read, then check write.
-			if (sibling_mem.write_fault(temp.addr, temp.size) )
-				return true;
-		}
-	}
-	return false;
-}	
+    watchpoint_t<ADDRINT, UINT32> temp;//temp will hold the watchpoint_t struct dumped out from object_thread
+    (this_mem).DumpStart();//It would get read to dump all the "read/write set" out;
+    while (!(this_mem).DumpEnd() ) {
+        temp = (this_mem).Dump();//This would dump out all the wp one by one.
+        if (temp.flags & WA_WRITE) {//If this is a write, then check both read and write.
+            if (sibling_mem.watch_fault(temp.addr, temp.size) )
+                return true;
+        }
+        if (temp.flags & WA_READ) {//If this is a read, then check write.
+            if (sibling_mem.write_fault(temp.addr, temp.size) )
+                return true;
+        }
+    }
+    return false;
+}   
 
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
-	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID		this_threadid = PIN_GetTid();
-	thread_wp_data_t*	this_thread = new thread_wp_data_t;
+    GetLock(&init_lock, threadid+1);//get LOCK
+    OS_THREAD_ID        this_threadid = PIN_GetTid();
+    thread_wp_data_t*   this_thread = new thread_wp_data_t;
     this_thread->children_skipped_kill = false;
     this_thread->sibling_skipped_kill = false;
     this_thread->has_had_siblings = false;
@@ -134,19 +134,19 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 
     //fprintf(stderr, "Starting thread %u\n", this_threadid);
 
-	if (thread_num == 0) {
-		this_thread->root = true;
-		this_thread->self_mem_ptr = &root_mem_data;//root has no parents so it stores the data at root_mem_data
-	}
-	else {
-		thread_wp_data_t*	parent_thread;
-		this_thread->self_mem_ptr = new thread_mem_data_t;//creat a new mem for itself
-		this_thread->root = false;
-		this_thread->parent_threadid = PIN_GetParentTid();//get the pointer points to its parent thread
+    if (thread_num == 0) {
+        this_thread->root = true;
+        this_thread->self_mem_ptr = &root_mem_data;//root has no parents so it stores the data at root_mem_data
+    }
+    else {
+        thread_wp_data_t*   parent_thread;
+        this_thread->self_mem_ptr = new thread_mem_data_t;//creat a new mem for itself
+        this_thread->root = false;
+        this_thread->parent_threadid = PIN_GetParentTid();//get the pointer points to its parent thread
         //fprintf(stderr, "Parent of thread %u is %u\n", threadid, this_thread->parent_threadid);
-		parent_thread = thread_map[this_thread->parent_threadid];
-		parent_thread->child_data.push_back(this_thread->self_mem_ptr);//insert the mem for this thread into its parent's data. In the order of thread create time
-		parent_thread->child_thread_num++;//parent child_thread_num++
+        parent_thread = thread_map[this_thread->parent_threadid];
+        parent_thread->child_data.push_back(this_thread->self_mem_ptr);//insert the mem for this thread into its parent's data. In the order of thread create time
+        parent_thread->child_thread_num++;//parent child_thread_num++
         // Set the parent to know that it has had a child.
         parent_thread->has_had_children = true;
 
@@ -158,20 +158,20 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
             thread_map[*sibling_iter]->has_had_siblings = true;
         }
         parent_thread->children_thread_ids.push_back(this_threadid);
-	}
-	this_thread->child_thread_num = 0;
-	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
-	
-	thread_map[this_threadid] = this_thread;
-	thread_num++;
+    }
+    this_thread->child_thread_num = 0;
+    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+    
+    thread_map[this_threadid] = this_thread;
+    thread_num++;
 
-	ReleaseLock(&init_lock);//release lOCK
+    ReleaseLock(&init_lock);//release lOCK
 }
 
 VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 {
-	OS_THREAD_ID this_threadid = PIN_GetTid();
-	thread_wp_data_t* this_thread = thread_map[this_threadid];
+    OS_THREAD_ID this_threadid = PIN_GetTid();
+    thread_wp_data_t* this_thread = thread_map[this_threadid];
     OS_THREAD_ID this_parent_threadid = this_thread->parent_threadid;
     thread_mem_data_t* child_mem_ptr;
     thread_mem_data_t* parent_mem_ptr;
@@ -351,29 +351,29 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 // This would check for read watchfault. And save it to mem(as read set) if there are any.
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
-	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID this_threadid = PIN_GetTid();
-	thread_wp_data_t* this_thread = thread_map[this_threadid];
+    GetLock(&init_lock, threadid+1);//get LOCK
+    OS_THREAD_ID this_threadid = PIN_GetTid();
+    thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
-	}
-	ReleaseLock(&init_lock);//release LOCK
-	return;
+        (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+        (this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    }
+    ReleaseLock(&init_lock);//release LOCK
+    return;
 }
 
 // This would check for write watchfault. And save it to mem(as read set) if there are any.
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
-	GetLock(&init_lock, threadid+1);//get LOCK
-	OS_THREAD_ID this_threadid = PIN_GetTid();
-	thread_wp_data_t* this_thread = thread_map[this_threadid];
+    GetLock(&init_lock, threadid+1);//get LOCK
+    OS_THREAD_ID this_threadid = PIN_GetTid();
+    thread_wp_data_t* this_thread = thread_map[this_threadid];
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
-	}
-	ReleaseLock(&init_lock);//release LOCK
-	return;
+        (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+        (this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    }
+    ReleaseLock(&init_lock);//release LOCK
+    return;
 }
 
 // This function is called before every block
@@ -416,7 +416,7 @@ VOID Instruction(INS ins, VOID *v)
                 IARG_INST_PTR,
                 IARG_MEMORYOP_EA, memOp,
                 IARG_MEMORYREAD_SIZE,
-				IARG_THREAD_ID,
+                IARG_THREAD_ID,
                 IARG_END);
         }
         // Note that in some architectures a single memory operand can be 
@@ -424,12 +424,12 @@ VOID Instruction(INS ins, VOID *v)
         // In that case we instrument it once for read and once for write.
         if (INS_MemoryOperandIsWritten(ins, memOp))
         {
-            INS_InsertCall	(
+            INS_InsertCall  (
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_INST_PTR,
                 IARG_MEMORYOP_EA, memOp,
                 IARG_MEMORYWRITE_SIZE,
-				IARG_THREAD_ID,
+                IARG_THREAD_ID,
                 IARG_END);
         }
     }
@@ -495,7 +495,7 @@ VOID Fini(INT32 code, VOID *v)
     
     deque<unsigned long long>::iterator iter;
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
-    	OutFile << "The max_range_num for this thread is: " << *iter << endl;
+        OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
     
     OutFile << endl;
