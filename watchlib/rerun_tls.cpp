@@ -296,12 +296,6 @@ VOID Fini(INT32 code, VOID *v)
 
     OutFile << endl;
 
-    for (iter = total_avg_range_num.begin(); iter != total_avg_range_num.end(); iter++) {
-        OutFile << "The avg_range_num for this thread is: " << *iter << endl;
-    }
-
-    OutFile << endl;
-
     for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
         OutFile << "The avg_range_num for this thread is: " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
         OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
