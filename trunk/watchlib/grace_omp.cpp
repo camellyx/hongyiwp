@@ -535,7 +535,7 @@ VOID Fini(INT32 code, VOID *v)
 
     deque<range_data_t>::iterator range_iter;
     for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
-        OutFile << "The avg_range_num for this thread is:  " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
+        OutFile << "The avg_range_num for this thread is: " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
         OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
         OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
         OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
@@ -565,13 +565,13 @@ VOID Fini(INT32 code, VOID *v)
 
 INT32 Usage()
 {
-    cerr << "Grace OpenMP Watchpoint system.";
+    cerr << "Grace OpenMP Watchpoint system." << endl;
     cerr << "  Just give this guy an OMP program to run." << endl;
     cerr << "NOTE: The Program must be annotated such that each parallel ";
     cerr << "section begins with an assembly instruction 'prefetcht0' and ";
     cerr << "ends with an assembly instruction 'prefetcht1'" << endl;
     cerr << "Will give output data in grace_omp.out unless you give ";
-    cerr << "it a -o {name} option" << endl;
+    cerr << "it a -o {name} option." << endl;
     cerr << endl << KNOB_BASE::StringKnobSummary() << endl;
     return -1;
 }

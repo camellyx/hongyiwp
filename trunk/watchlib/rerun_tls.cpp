@@ -79,6 +79,8 @@ VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 	GetLock(&init_lock, threadid+1);//get LOCK
 	thread_wp_data_t* this_thread = new thread_wp_data_t;
 
+    this_thread->number_of_instructions = 0;
+
 	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
 	
 	thread_map[threadid] = this_thread;
@@ -92,6 +94,7 @@ VOID AddThreadData(thread_wp_data_t* thread_to_add)
     trie_total = trie_total + (thread_to_add->wp).get_trie_data();
     total_trie_data.push_back( (thread_to_add->wp).get_trie_data() );
 #ifdef RANGE_CACHE
+    fprintf(stderr, "Adding in this total: %llu\n", (thread_to_add->wp).get_range_data().hit);
     range_total = range_total + (thread_to_add->wp).get_range_data();
     total_max_range_num.push_back( ( (thread_to_add->wp).get_range_data() ).max_range_num );
     total_avg_range_num.push_back( ((thread_to_add->wp).get_range_data()).total_cur_range_num / ((thread_to_add->wp).get_range_data()).changes );
@@ -243,28 +246,28 @@ VOID Fini(INT32 code, VOID *v)
     // Write to a file since cout and cerr maybe closed by the application
     OutFile << "Total number of instructions: " << instruction_total << endl;
     OutFile << endl << "**Trie data: \n" << endl;
-    OutFile << "The number of total hits on top-level access: " << trie_total.top_hit << endl;
-    OutFile << "The number of total hits on second-level access: " << trie_total.mid_hit << endl;
-    OutFile << "The number of total hits on bottom-level access: " << trie_total.bot_hit << endl;
-    OutFile << "The number of total changes on top-level: " << trie_total.top_change << endl;
-    OutFile << "The number of total changes on second-level: " << trie_total.mid_change << endl;
-    OutFile << "The number of total changes on bottom-level: " << trie_total.bot_change << endl;
-    OutFile << "The number of total breaks for top-level entires: " << trie_total.top_break << endl;
-    OutFile << "The number of total breaks for second-level entries: " << trie_total.mid_break << endl;
-    OutFile << "Notes*: *break* means a top or second level entrie can't represent the whole page below anymore." << endl << endl;
+    OutFile << "The number of total top-level accesses: " << trie_total.top_hit << endl;
+    OutFile << "The number of total mid-level accesses: " << trie_total.mid_hit << endl;
+    OutFile << "The number of total bot-level accesses: " << trie_total.bot_hit << endl;
+    OutFile << "The number of total top-level changes: " << trie_total.top_change << endl;
+    OutFile << "The number of total mid-level changes: " << trie_total.mid_change << endl;
+    OutFile << "The number of total bot-level changes: " << trie_total.bot_change << endl;
+    OutFile << "The number of total top-level breaks: " << trie_total.top_break << endl;
+    OutFile << "The number of total mid-level breaks: " << trie_total.mid_break << endl;
+    OutFile << "Notes*: *break* means a top or second level entry can't represent the whole page below anymore." << endl << endl;
 
-    OutFile << "The number of total WLB top-level hits: " << trie_total.wlb_hit_top << endl;
-    OutFile << "The number of total WLB mid-level hits: " << trie_total.wlb_hit_mid << endl;
-    OutFile << "The number of total WLB bot-level hits: " << trie_total.wlb_hit_bot << endl;
-    OutFile << "The number of total WLB top-level misses: " << trie_total.wlb_miss_top << endl;
-    OutFile << "The number of total WLB mid-level misses: " << trie_total.wlb_miss_mid << endl;
-    OutFile << "The number of total WLB bot-level misses: " << trie_total.wlb_miss_bot << endl;
-    OutFile << endl;
+    OutFile << "The number of total top-level WLB hits: " << trie_total.wlb_hit_top << endl;
+    OutFile << "The number of total mid-level WLB hits: " << trie_total.wlb_hit_mid << endl;
+    OutFile << "The number of total bot-level WLB hits: " << trie_total.wlb_hit_bot << endl;
+    OutFile << "The number of total top-level WLB misses: " << trie_total.wlb_miss_top << endl;
+    OutFile << "The number of total mid-level WLB misses: " << trie_total.wlb_miss_mid << endl;
+    OutFile << "The number of total bot-level WLB misses: " << trie_total.wlb_miss_bot << endl << endl;
+    
     deque<trie_data_t>::iterator trie_iter;
     for (trie_iter = total_trie_data.begin(); trie_iter != total_trie_data.end(); trie_iter++) {
-        OutFile << "The number of top-level hits for this thread: " << trie_iter->top_hit << endl;
-        OutFile << "The number of mid-level hits for this thread: " << trie_iter->mid_hit << endl;
-        OutFile << "The number of bot-level hits for this thread: " << trie_iter->bot_hit << endl;
+        OutFile << "The number of top-level accesses for this thread: " << trie_iter->top_hit << endl;
+        OutFile << "The number of mid-level accesses for this thread: " << trie_iter->mid_hit << endl;
+        OutFile << "The number of bot-level accesses for this thread: " << trie_iter->bot_hit << endl;
         OutFile << "The number of top-level changes for this thread: " << trie_iter->top_change << endl;
         OutFile << "The number of mid-level changes for this thread: " << trie_iter->mid_change << endl;
         OutFile << "The number of bot-level changes for this thread: " << trie_iter->bot_change << endl;
@@ -275,15 +278,15 @@ VOID Fini(INT32 code, VOID *v)
         OutFile << "The number of bot-level WLB hits for this thread: " << trie_iter->wlb_hit_bot << endl;
         OutFile << "The number of top-level WLB miss for this thread: " << trie_iter->wlb_miss_top << endl;
         OutFile << "The number of mid-level WLB miss for this thread: " << trie_iter->wlb_miss_mid << endl;
-        OutFile << "The number of bot-level WLB miss for this thread: " << trie_iter->wlb_miss_bot << endl << endl;
+        OutFile << "The number of bot-level WLB miss for this thread: " << trie_iter->wlb_miss_bot << endl;
+        OutFile << "----" << endl;
     }
 #ifdef RANGE_CACHE
     OutFile << endl << "**Range_cache data: " << endl;
-    OutFile << "The number of average ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
-    OutFile << "The number of hits in the system: " << range_total.hit << endl;
-    OutFile << "The number of miss in the system: " << range_total.miss << endl;
-    OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
-    OutFile << "Below are max_range_num for each thread: " << endl;
+    OutFile << "The average number of ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
+    OutFile << "The number of range hits: " << range_total.hit << endl;
+    OutFile << "The number of range misses: " << range_total.miss << endl;
+    OutFile << "The number of range kickouts: " << range_total.kick << endl << endl;
     
     deque<unsigned long long>::iterator iter;
     deque<range_data_t>::iterator range_iter;
@@ -300,9 +303,11 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << endl;
 
     for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
+        OutFile << "The avg_range_num for this thread is: " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
         OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
         OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
         OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
+        OutFile << "----" << endl;
     }
 
 #endif
@@ -315,8 +320,9 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << endl;
 
     for (pagetable_iter = total_pagetable_data.begin(); pagetable_iter != total_pagetable_data.end(); pagetable_iter++) {
-        OutFile << "The number of accesses to paged marked in this thread: " << pagetable_iter->access << endl;
+        OutFile << "The number of accesses to pages marked in this thread: " << pagetable_iter->access << endl;
         OutFile << "The number of accesses to real watchpoint in this thread: " << pagetable_iter->wp_hit << endl;
+        OutFile << "----" << endl;
     }
 #endif
 ////////////////////////Out put the data collected
@@ -342,7 +348,10 @@ VOID DataInit() {
 
 INT32 Usage()
 {
-    cerr << "This tool counts the number of dynamic instructions executed" << endl;
+    cerr << "Rerun Watchpoint system." << endl;
+    cerr << "  Just give this a parallel program to run." << endl;
+    cerr << "Will give output data in rerun_tls.out unless you give ";
+    cerr << "it a -o {name} option." << endl;
     cerr << endl << KNOB_BASE::StringKnobSummary() << endl;
     return -1;
 }

@@ -454,9 +454,9 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The number of total bot-level changes: " << root_mem_data.trie.bot_change << endl;
     OutFile << "The number of total top-level breaks: " << root_mem_data.trie.top_break << endl;
     OutFile << "The number of total mid-level breaks: " << root_mem_data.trie.mid_break << endl;
-    OutFile << "Notes*: *break* means a top or second level entry can't represent the whole page below anymore." << endl;
+    OutFile << "Notes*: *break* means a top or second level entry can't represent the whole page below anymore." << endl << endl;
 
-    OutFile << endl << "The number of total top-level WLB hits: " << root_mem_data.trie.wlb_hit_top << endl;
+    OutFile << "The number of total top-level WLB hits: " << root_mem_data.trie.wlb_hit_top << endl;
     OutFile << "The number of total mid-level WLB hits: " << root_mem_data.trie.wlb_hit_mid << endl;
     OutFile << "The number of total bot-level WLB hits: " << root_mem_data.trie.wlb_hit_bot << endl;
     OutFile << "The number of total top-level WLB misses: " << root_mem_data.trie.wlb_miss_top << endl;
@@ -498,7 +498,7 @@ VOID Fini(INT32 code, VOID *v)
 
     deque<range_data_t>::iterator range_iter;
     for (range_iter = total_range_data.begin(); range_iter != total_range_data.end(); range_iter++) {
-        OutFile << "The avg_range_num for this thread is:  " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
+        OutFile << "The avg_range_num for this thread is: " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
         OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
         OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
         OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
@@ -528,13 +528,13 @@ VOID Fini(INT32 code, VOID *v)
 
 INT32 Usage()
 {
-    cerr << "Grace Watchpoint system.";
+    cerr << "Grace Watchpoint system." << endl;
     cerr << "  Just give this guy an fork/join program to run." << endl;
     cerr << "NOTE: This will not work with LibGomp OpenMP programs ";
     cerr << "because they don't kill the worker threads at the end of ";
     cerr << "each parallel region.  Use grace_omp.so for them." << endl;
     cerr << "Will give output data in grace_tls.out unless you give ";
-    cerr << "it a -o {name} option" << endl;
+    cerr << "it a -o {name} option." << endl;
     cerr << endl << KNOB_BASE::StringKnobSummary() << endl;
     return -1;
 }
