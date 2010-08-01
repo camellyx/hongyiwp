@@ -98,7 +98,7 @@ VOID AddThreadData(thread_wp_data_t* thread_to_add)
     range_total = range_total + (thread_to_add->wp).get_range_data();
     total_max_range_num.push_back( ( (thread_to_add->wp).get_range_data() ).max_range_num );
     total_avg_range_num.push_back( ((thread_to_add->wp).get_range_data()).total_cur_range_num / ((thread_to_add->wp).get_range_data()).changes );
-    total_range_data.push_back( range_total );
+    total_range_data.push_back( (thread_to_add->wp).get_range_data() );
 #endif
 #ifdef PAGE_TABLE
     pagetable_total = pagetable_total + (thread_to_add->wp).get_pagetable_data();
