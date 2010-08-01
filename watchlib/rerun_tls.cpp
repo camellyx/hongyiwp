@@ -28,7 +28,7 @@ limitations under the License. **/
 // Force each thread's data to be in its own data cache line so that
 // multiple threads do not contend for the same data cache line.
 #define PADSIZE 56  // 64 byte line size: 64-8
-#define MEM_SIZE	0//(-1 & ~4194303)//0	// 0xffffffff as the max vertual memory address.
+#define MEM_SIZE    0//(-1 & ~4194303)//0   // 0xffffffff as the max vertual memory address.
 
 using std::deque;
 using Hongyi_WatchPoint::WatchPoint;
@@ -43,8 +43,8 @@ using Hongyi_WatchPoint::MEM_WatchPoint;
 //My own data
 struct thread_wp_data_t
 {
-	MEM_WatchPoint<ADDRINT, UINT32> mem;
-	WatchPoint<ADDRINT, UINT32> wp;
+    MEM_WatchPoint<ADDRINT, UINT32> mem;
+    WatchPoint<ADDRINT, UINT32> wp;
     UINT64 number_of_instructions;
     UINT8 pad[PADSIZE];
 };
@@ -76,16 +76,16 @@ PIN_LOCK init_lock;
 
 VOID ThreadStart(THREADID threadid, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
-	GetLock(&init_lock, threadid+1);//get LOCK
-	thread_wp_data_t* this_thread = new thread_wp_data_t;
+    GetLock(&init_lock, threadid+1);//get LOCK
+    thread_wp_data_t* this_thread = new thread_wp_data_t;
 
     this_thread->number_of_instructions = 0;
 
-	(this_thread->wp).add_watch_wp(0, MEM_SIZE);
-	
-	thread_map[threadid] = this_thread;
+    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+    
+    thread_map[threadid] = this_thread;
     live_threads.push_back(threadid);
-	ReleaseLock(&init_lock);//release lOCK
+    ReleaseLock(&init_lock);//release lOCK
 }
 
 VOID AddThreadData(thread_wp_data_t* thread_to_add)
@@ -111,8 +111,8 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
     deque<THREADID>::iterator iter;
     GetLock(&init_lock, threadid+1);//get LOCK
     AddThreadData(thread_map[threadid]);
-	delete thread_map[threadid];
-	thread_map.erase (threadid);
+    delete thread_map[threadid];
+    thread_map.erase (threadid);
     for(iter = live_threads.begin(); iter != live_threads.end(); iter++) {
         if(*iter == threadid) {
             live_threads.erase(iter);
@@ -125,54 +125,54 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 // Prepare a memory read
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
-	thread_wp_data_t* this_thread = thread_map[threadid];
+    thread_wp_data_t* this_thread = thread_map[threadid];
     if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-    	thread_wp_data_t* object_thread;
-		GetLock(&init_lock, threadid+1);//get LOCK
-		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
-			if (thread_map_iter->first != threadid) {
-				object_thread = thread_map_iter->second;
-				if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					(this_thread->mem).clear();
-					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
-					ReleaseLock(&init_lock);//release LOCK
-					return;
-				}
-			}
-		}
-		
-		(this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
-		ReleaseLock(&init_lock);//release LOCK
-	}
-	return;
+        thread_wp_data_t* object_thread;
+        GetLock(&init_lock, threadid+1);//get LOCK
+        for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+            if (thread_map_iter->first != threadid) {
+                object_thread = thread_map_iter->second;
+                if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+                    (this_thread->mem).clear();
+                    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+                    ReleaseLock(&init_lock);//release LOCK
+                    return;
+                }
+            }
+        }
+        
+        (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+        (this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        ReleaseLock(&init_lock);//release LOCK
+    }
+    return;
 }
 
 // Prepare a memory write
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
-	thread_wp_data_t* this_thread = thread_map[threadid];
+    thread_wp_data_t* this_thread = thread_map[threadid];
 
     if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-    	thread_wp_data_t* object_thread;
-	    GetLock(&init_lock, threadid+1);//get LOCK
-		for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
-			if (thread_map_iter->first != threadid) {
-				object_thread = thread_map_iter->second;
-				if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-					(this_thread->mem).clear();
-					(this_thread->wp).add_watch_wp(0, MEM_SIZE);
-					ReleaseLock(&init_lock);//release LOCK
-					return;
-				}
-			}
-		}
-		
-		(this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-		(this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
-		ReleaseLock(&init_lock);//release LOCK
-	}
-	return;
+        thread_wp_data_t* object_thread;
+        GetLock(&init_lock, threadid+1);//get LOCK
+        for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+            if (thread_map_iter->first != threadid) {
+                object_thread = thread_map_iter->second;
+                if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+                    (this_thread->mem).clear();
+                    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+                    ReleaseLock(&init_lock);//release LOCK
+                    return;
+                }
+            }
+        }
+        
+        (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+        (this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        ReleaseLock(&init_lock);//release LOCK
+    }
+    return;
 }
 
 // This function is called before every block
@@ -215,7 +215,7 @@ VOID Instruction(INS ins, VOID *v)
                 IARG_INST_PTR,
                 IARG_MEMORYOP_EA, memOp,
                 IARG_MEMORYREAD_SIZE,
-				IARG_THREAD_ID,
+                IARG_THREAD_ID,
                 IARG_END);
         }
         // Note that in some architectures a single memory operand can be 
@@ -223,12 +223,12 @@ VOID Instruction(INS ins, VOID *v)
         // In that case we instrument it once for read and once for write.
         if (INS_MemoryOperandIsWritten(ins, memOp))
         {
-            INS_InsertCall	(
+            INS_InsertCall  (
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_INST_PTR,
                 IARG_MEMORYOP_EA, memOp,
                 IARG_MEMORYWRITE_SIZE,
-				IARG_THREAD_ID,
+                IARG_THREAD_ID,
                 IARG_END);
         }
     }
@@ -241,8 +241,8 @@ VOID Fini(INT32 code, VOID *v)
     for(live_iter = live_threads.begin(); live_iter != live_threads.end(); live_iter++) {
         AddThreadData(thread_map[*live_iter]);
     }
-	ofstream OutFile;
-	OutFile.open(KnobOutputFile.Value().c_str());
+    ofstream OutFile;
+    OutFile.open(KnobOutputFile.Value().c_str());
     // Write to a file since cout and cerr maybe closed by the application
     OutFile << "Total number of instructions: " << instruction_total << endl;
     OutFile << endl << "**Trie data: \n" << endl;
@@ -291,7 +291,7 @@ VOID Fini(INT32 code, VOID *v)
     deque<unsigned long long>::iterator iter;
     deque<range_data_t>::iterator range_iter;
     for (iter = total_max_range_num.begin(); iter != total_max_range_num.end(); iter++) {
-    	OutFile << "The max_range_num for this thread is: " << *iter << endl;
+        OutFile << "The max_range_num for this thread is: " << *iter << endl;
     }
 
     OutFile << endl;
@@ -313,9 +313,9 @@ VOID Fini(INT32 code, VOID *v)
 #endif
 #ifdef PAGE_TABLE
     deque<pagetable_data_t>::iterator pagetable_iter;
-	OutFile << endl << "**PageTable data: " << endl;
-	OutFile << "The number of accesses to a page marked as watched: " << pagetable_total.access << endl;
-	OutFile << "The number of accesses to a real watchpoint: " << pagetable_total.wp_hit << endl;
+    OutFile << endl << "**PageTable data: " << endl;
+    OutFile << "The number of accesses to a page marked as watched: " << pagetable_total.access << endl;
+    OutFile << "The number of accesses to a real watchpoint: " << pagetable_total.wp_hit << endl;
     
     OutFile << endl;
 
@@ -331,15 +331,15 @@ VOID Fini(INT32 code, VOID *v)
 }
 
 VOID DataInit() {
-	trie_total.top_hit = 0;
-	trie_total.mid_hit = 0;
-	trie_total.bot_hit = 0;
-	trie_total.top_change = 0;
-	trie_total.mid_change = 0;
-	trie_total.bot_change = 0;
-	trie_total.top_break = 0;
-	trie_total.mid_break = 0;
-	return;
+    trie_total.top_hit = 0;
+    trie_total.mid_hit = 0;
+    trie_total.bot_hit = 0;
+    trie_total.top_change = 0;
+    trie_total.mid_change = 0;
+    trie_total.bot_change = 0;
+    trie_total.top_break = 0;
+    trie_total.mid_break = 0;
+    return;
 }
 
 /* ===================================================================== */
