@@ -94,7 +94,6 @@ VOID AddThreadData(thread_wp_data_t* thread_to_add)
     trie_total = trie_total + (thread_to_add->wp).get_trie_data();
     total_trie_data.push_back( (thread_to_add->wp).get_trie_data() );
 #ifdef RANGE_CACHE
-    fprintf(stderr, "Adding in this total: %llu\n", (thread_to_add->wp).get_range_data().hit);
     range_total = range_total + (thread_to_add->wp).get_range_data();
     total_max_range_num.push_back( ( (thread_to_add->wp).get_range_data() ).max_range_num );
     total_avg_range_num.push_back( ((thread_to_add->wp).get_range_data()).total_cur_range_num / ((thread_to_add->wp).get_range_data()).changes );
