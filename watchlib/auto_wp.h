@@ -1036,13 +1036,13 @@ namespace Hongyi_WatchPoint{
     template <class ADDRESS, class FLAGS>
     void WatchPoint<ADDRESS, FLAGS>::invalidate_wlb (ADDRESS target_addr, ADDRESS target_size) {
         typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
-        for (iter = wlb.begin(); iter != wlb.end(); iter++) {
+        for (iter = wlb.begin(); iter != wlb.end(); ) {
             if (((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                 // Some overlap occurred
                 iter = wlb.erase(iter);
-                // The ++ will make us skip the new value if we don't back off.
-                iter--;
             }
+            else
+                iter++;
         }
     }
 	
@@ -1439,20 +1439,24 @@ namespace Hongyi_WatchPoint{
 
         // Check the Lookaside buffer and update its LRU status.  See if we WLB hit.
         if (lookaside) {
-            for (iter = wlb.begin(); iter != wlb.end(); iter++) {
+            deque<watchpoint_t<ADDRESS, FLAGS> > guys_to_push;
+            for (iter = wlb.begin(); iter != wlb.end();) {
                 if(((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                     did_hit = 1;
                     if (iter->size == 0) {
                         trie.wlb_hit_top++;
                         break;
                     }
-                    temp_val = *iter;
+                    guys_to_push.push_back(*iter);
                     iter = wlb.erase(iter);
-                    wlb.push_front(temp_val);
-                    // Iterator can't be pointing to beginning, so decr. here and for loop will then incr.
-                    iter--;
                 }
+                else
+                    iter++;
             }
+            for (iter = guys_to_push.begin(); iter != guys_to_push.end(); iter++) {
+                wlb.push_front(*iter);
+            }
+            guys_to_push.clear();
         }
 
 		iter = search_address(target_addr, wp);
