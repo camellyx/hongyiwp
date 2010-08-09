@@ -2002,7 +2002,6 @@ namespace Hongyi_WatchPoint{
 		range_t<ADDRESS>	insert_range;
 		typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
 		
-		range_cache_iter = range_cache.begin();
 		//Front Blank
 		end_addr = iter->addr - 1;
 		
