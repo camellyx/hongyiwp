@@ -37,12 +37,14 @@ namespace Hongyi_WatchPoint {
 		FLAGS flags;
 	};
 
+#ifdef RANGE_CACHE
 	template<class ADDRESS>
 	struct range_t {
-		ADDRESS	start_addr;
-		ADDRESS	end_addr;
+        ADDRESS	start_addr;
+        ADDRESS	end_addr;
         bool dirty;
 	};
+#endif
 
 	struct trie_data_t {
 		unsigned long long top_hit;
