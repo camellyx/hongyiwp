@@ -424,7 +424,7 @@ namespace Hongyi_WatchPoint{
 
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::watch_print() {
-		int i;
+        unsigned int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
 			cout << "This is the " << i << "th watchpoint." <<endl;
@@ -2130,7 +2130,7 @@ namespace Hongyi_WatchPoint{
 	template <class ADDRESS, class FLAGS>
 	MEM_WatchPoint<ADDRESS, FLAGS>::MEM_WatchPoint(const MEM_WatchPoint& parameter) {
 		wp.resize((int)parameter.wp.size());
-		int i;
+        unsigned int i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
 		}
@@ -2145,7 +2145,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void MEM_WatchPoint<ADDRESS, FLAGS>::watch_print() {
-		int i;
+        unsigned int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
 			cout << "This is the " << i << "th watchpoint." <<endl;
@@ -2176,7 +2176,7 @@ namespace Hongyi_WatchPoint{
 		add_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
-	
+
 	template <class ADDRESS, class FLAGS>
 	void MEM_WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
 		if (target_size == 0)
