@@ -362,28 +362,32 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 // This would check for read watchfault. And save it to mem(as read set) if there are any.
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
-    GetLock(&init_lock, threadid+1);
-    OS_THREAD_ID this_threadid = PIN_GetTid();
-    thread_wp_data_t* this_thread = thread_map[this_threadid];
-    if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    if (thread_num > 1) {
+        GetLock(&init_lock, threadid+1);
+        OS_THREAD_ID this_threadid = PIN_GetTid();
+        thread_wp_data_t* this_thread = thread_map[this_threadid];
+        if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        }
+        ReleaseLock(&init_lock);
     }
-    ReleaseLock(&init_lock);
     return;
 }
 
 // This would check for write watchfault. And save it to mem(as read set) if there are any.
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
-    GetLock(&init_lock, threadid+1);
-    OS_THREAD_ID this_threadid = PIN_GetTid();
-    thread_wp_data_t* this_thread = thread_map[this_threadid];
-    if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    if (thread_num > 1) {
+        GetLock(&init_lock, threadid+1);
+        OS_THREAD_ID this_threadid = PIN_GetTid();
+        thread_wp_data_t* this_thread = thread_map[this_threadid];
+        if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        }
+        ReleaseLock(&init_lock);
     }
-    ReleaseLock(&init_lock);
     return;
 }
 
