@@ -12,7 +12,9 @@
 #define WP_H
 #endif
 
-#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+// Without this macro, range cache won't be turned on.
+#define       RANGE_CACHE
+// Without this macro, page table checking won't be turned on.
 #define       PAGE_TABLE
 
 #define RANGE_CACHE_SIZE	64
