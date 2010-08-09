@@ -4341,10 +4341,11 @@ void Fini(INT32 code, void *v)
 	OutFile << endl << "**Range_cache data: \n" << endl;
     //OutFile << "The number of average ranges in the system: " << range_total.avg_range_num << endl;
     OutFile << "The number of average ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
-    OutFile << "The number of hits in the system: " << range_total.hit << endl;
-    OutFile << "The number of miss in the system: " << range_total.miss << endl;
-    OutFile << "The number of range kickouts in the system: " << range_total.kick << endl << endl;
-    OutFile << "The number of maximum ranges in the system: " << range_total.max_range_num << endl;
+    OutFile << "The number of range hits: " << range_total.hit << endl;
+    OutFile << "The number of range misses: " << range_total.miss << endl;
+    OutFile << "The number of ranges kicked out: " << range_total.kick << endl;
+    OutFile << "The number of times dirty ranges were kicked: " << range_total.dirty_kick << endl;
+    OutFile << "The number of maximum ranges: " << range_total.max_range_num << endl;
 #endif
 #ifdef PAGE_TABLE
     pagetable_total = pagetable_total + taint_store.wp.get_pagetable_data();

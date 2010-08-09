@@ -285,7 +285,8 @@ VOID Fini(INT32 code, VOID *v)
     OutFile << "The average number of ranges in the system: " << ((double)range_total.total_cur_range_num/range_total.changes) << endl;
     OutFile << "The number of range hits: " << range_total.hit << endl;
     OutFile << "The number of range misses: " << range_total.miss << endl;
-    OutFile << "The number of range kickouts: " << range_total.kick << endl << endl;
+    OutFile << "The number of ranges kicked out: " << range_total.kick << endl;
+    OutFile << "The number of times dirty ranges were kicked: " << range_total.dirty_kick << endl << endl;
     
     deque<unsigned long long>::iterator iter;
     deque<range_data_t>::iterator range_iter;
@@ -299,7 +300,8 @@ VOID Fini(INT32 code, VOID *v)
         OutFile << "The avg_range_num for this thread is: " << (range_iter->total_cur_range_num/range_iter->changes) << endl;
         OutFile << "The number of hits in this thread: " << range_iter->hit << endl;
         OutFile << "The number of miss in this thread: " << range_iter->miss << endl;
-        OutFile << "The number of kickouts in this thread: " << range_iter->kick << endl;
+        OutFile << "The number of ranges kicked from this thread: " << range_iter->kick << endl;
+        OutFile << "The number of times dirty ranges were kicked from this thread " << range_iter->dirty_kick << endl;
         OutFile << "----" << endl;
     }
 
