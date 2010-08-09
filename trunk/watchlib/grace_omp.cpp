@@ -75,6 +75,8 @@ struct thread_wp_data_t
 INT32 thread_num = 0;//Well this is the only thing to determine whether if a thread is a root or not. If thread_num = 0. Then the thread is a root.
 thread_mem_data_t   root_mem_data;//This is where root store its data(root has no parents)
 
+INT32 active_threads = 0;
+
 map<OS_THREAD_ID,thread_wp_data_t*>             thread_map;
 map<OS_THREAD_ID,thread_wp_data_t*>::iterator   thread_map_iter;
 
@@ -127,6 +129,7 @@ VOID restart_thread_counts(thread_wp_data_t* this_thread)
 VOID Prefetch0Call(THREADID threadid)
 {
     GetLock(&init_lock, threadid+1);
+    active_threads++;
     OS_THREAD_ID        this_threadid = PIN_GetTid();
     thread_wp_data_t*   this_thread = thread_map[this_threadid];
     this_thread->children_skipped_kill = false;
@@ -252,6 +255,7 @@ VOID Prefetch1Call(THREADID threadid)
     pagetable_data_t temp_pagetable;
 #endif
     GetLock(&init_lock, threadid+1);
+    active_threads--;
 
     temp_trie = this_thread->wp.get_trie_data();
     this_thread->self_mem_ptr->trie = this_thread->self_mem_ptr->trie + temp_trie;
@@ -390,11 +394,13 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
     GetLock(&init_lock, threadid+1);
-    OS_THREAD_ID this_threadid = PIN_GetTid();
-    thread_wp_data_t* this_thread = thread_map[this_threadid];
-    if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    if (active_threads > 0) {
+        OS_THREAD_ID this_threadid = PIN_GetTid();
+        thread_wp_data_t* this_thread = thread_map[this_threadid];
+        if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->self_mem_ptr->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        }
     }
     ReleaseLock(&init_lock);
     return;
@@ -404,11 +410,13 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
     GetLock(&init_lock, threadid+1);
-    OS_THREAD_ID this_threadid = PIN_GetTid();
-    thread_wp_data_t* this_thread = thread_map[this_threadid];
-    if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+    if (active_threads > 0) {
+        OS_THREAD_ID this_threadid = PIN_GetTid();
+        thread_wp_data_t* this_thread = thread_map[this_threadid];
+        if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->self_mem_ptr->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+        }
     }
     ReleaseLock(&init_lock);
     return;

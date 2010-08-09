@@ -125,24 +125,26 @@ VOID ThreadFini(THREADID threadid, const CONTEXT *ctxt, INT32 code, VOID *v)
 VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 {
     thread_wp_data_t* this_thread = thread_map[threadid];
-    if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        thread_wp_data_t* object_thread;
-        GetLock(&init_lock, threadid+1);//get LOCK
-        for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
-            if (thread_map_iter->first != threadid) {
-                object_thread = thread_map_iter->second;
-                if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-                    (this_thread->mem).clear();
-                    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
-                    ReleaseLock(&init_lock);//release LOCK
-                    return;
+    if (live_threads.size() > 1) {
+        if ( (this_thread->wp).read_fault( (ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            thread_wp_data_t* object_thread;
+            GetLock(&init_lock, threadid+1);//get LOCK
+            for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+                if (thread_map_iter->first != threadid) {
+                    object_thread = thread_map_iter->second;
+                    if ( (object_thread->mem).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+                        (this_thread->mem).clear();
+                        (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+                        ReleaseLock(&init_lock);//release LOCK
+                        return;
+                    }
                 }
             }
+
+            (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
+            ReleaseLock(&init_lock);//release LOCK
         }
-        
-        (this_thread->wp).rm_read ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->mem).add_read_wp((ADDRINT) (addr), (ADDRINT) (size) );
-        ReleaseLock(&init_lock);//release LOCK
     }
     return;
 }
@@ -151,25 +153,27 @@ VOID RecordMemRead(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)
 VOID RecordMemWrite(VOID * ip, VOID * addr, UINT32 size, THREADID threadid)//, THREADID threadid)
 {
     thread_wp_data_t* this_thread = thread_map[threadid];
+    if (live_threads.size() > 1) {
 
-    if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-        thread_wp_data_t* object_thread;
-        GetLock(&init_lock, threadid+1);//get LOCK
-        for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
-            if (thread_map_iter->first != threadid) {
-                object_thread = thread_map_iter->second;
-                if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
-                    (this_thread->mem).clear();
-                    (this_thread->wp).add_watch_wp(0, MEM_SIZE);
-                    ReleaseLock(&init_lock);//release LOCK
-                    return;
+        if ( (this_thread->wp).write_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+            thread_wp_data_t* object_thread;
+            GetLock(&init_lock, threadid+1);//get LOCK
+            for (thread_map_iter = thread_map.begin(); thread_map_iter != thread_map.end(); thread_map_iter++) {
+                if (thread_map_iter->first != threadid) {
+                    object_thread = thread_map_iter->second;
+                    if ( (object_thread->mem).watch_fault((ADDRINT) (addr), (ADDRINT) (size) ) ) {
+                        (this_thread->mem).clear();
+                        (this_thread->wp).add_watch_wp(0, MEM_SIZE);
+                        ReleaseLock(&init_lock);//release LOCK
+                        return;
+                    }
                 }
             }
+
+            (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
+            (this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
+            ReleaseLock(&init_lock);//release LOCK
         }
-        
-        (this_thread->wp).rm_write ((ADDRINT) (addr), (ADDRINT) (size) );
-        (this_thread->mem).add_write_wp((ADDRINT) (addr), (ADDRINT) (size) );
-        ReleaseLock(&init_lock);//release LOCK
     }
     return;
 }
