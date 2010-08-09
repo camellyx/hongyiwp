@@ -1049,7 +1049,14 @@ namespace Hongyi_WatchPoint{
         for (iter = wlb.begin(); iter != wlb.end(); ) {
             if (((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                 // Some overlap occurred
-                iter = wlb.erase(iter);
+                // If we're at the bottom level, we don't need to invalidate
+                // the entry, just update its internal values.  This can be
+                // done with a WLB-update instruction that also writes
+                // to a location in the memory system, for instance.
+                if(iter->size == 16)
+                    iter++;
+                else
+                    iter = wlb.erase(iter);
             }
             else
                 iter++;
