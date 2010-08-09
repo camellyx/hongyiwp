@@ -39,6 +39,7 @@ namespace Hongyi_WatchPoint {
 	struct range_t {
 		ADDRESS	start_addr;
 		ADDRESS	end_addr;
+        bool dirty;
 	};
 
 	struct trie_data_t {
@@ -74,6 +75,7 @@ namespace Hongyi_WatchPoint {
 		unsigned long long hit;
 		unsigned long long miss;
 		unsigned long long kick;
+        unsigned long long dirty_kick;
         unsigned int avg_range_num;
 		
 		const range_data_t operator+(const range_data_t &other) const;
@@ -140,6 +142,7 @@ namespace Hongyi_WatchPoint {
 		result.hit += other.hit;
 		result.miss += other.miss;
 		result.kick += other.kick;
+        result.dirty_kick += other.dirty_kick;
 		return result;
 	}
 	
@@ -151,6 +154,7 @@ namespace Hongyi_WatchPoint {
 		hit = 0;
 		miss = 0;
 		kick = 0;
+        dirty_kick = 0;
 	}
 #endif
 
@@ -381,12 +385,14 @@ namespace Hongyi_WatchPoint{
 		if (target_addr != 0) {
 			insert_range.start_addr = 0;
 			insert_range.end_addr = target_addr - 1;
+            insert_range.dirty = false;
 			range_cache.push_back(insert_range);
 			range.cur_range_num++;
 		}
 		if (target_addr + target_size != 0) {
 			insert_range.start_addr = target_addr + target_size;
 			insert_range.end_addr = -1;
+            insert_range.dirty = false;
 			range_cache.push_back(insert_range);
 			range.cur_range_num++;
 		}
@@ -1815,15 +1821,18 @@ namespace Hongyi_WatchPoint{
 		range_cache_iter = Range_load(start_addr, end_addr, false);//as insert must be insert into some kinds of blank, so there must be an unwatched range.
 		range_cache_iter->start_addr = insert_wp.addr;//Change the size of the unwatched range, and make it as watched range.
 		range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+        range_cache_iter->dirty = true;
 		if (start_addr != insert_wp.addr) {//split front
 			insert_range.start_addr = start_addr;
 			insert_range.end_addr = insert_wp.addr - 1;
+            insert_range.dirty = true;
 			range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 			range.cur_range_num++;
 		}
 		if (end_addr != insert_wp.addr + insert_wp.size - 1) {//split back
 			insert_range.start_addr = insert_wp.addr + insert_wp.size;
 			insert_range.end_addr = end_addr;
+            insert_range.dirty = true;
 			range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 			range.cur_range_num++;
 		}
@@ -1851,6 +1860,7 @@ namespace Hongyi_WatchPoint{
                 // Because of this, we need to add a new region into the system that contains our "shrink" of the beginning if iter.
 				insert_range.end_addr = modify_t.addr - 1;
 				insert_range.start_addr = start_addr;
+                insert_range.dirty = true;
 				//range_cache_iter = range_cache.begin();
 				//range_cache.insert(range_cache_iter, insert_range);
                 // Delay this insertion so that the Range_load() below so it doesn't detect this range instead!
@@ -1876,6 +1886,7 @@ namespace Hongyi_WatchPoint{
 		range_cache_iter = Range_load(start_addr, end_addr, false);
 		range_cache_iter->start_addr = modify_t.addr;
 		range_cache_iter->end_addr = modify_t.addr + modify_t.size - 1;
+        range_cache_iter->dirty = true;
         if (delay_insert) {
             range_cache_iter = range_cache.begin();
             range_cache.insert(range_cache_iter, insert_range);
@@ -1891,6 +1902,7 @@ namespace Hongyi_WatchPoint{
                 // The old end touched the guy after him, so no watchpoints in between them.  We need to insert a new range between the two.
 				insert_range.start_addr = modify_t.addr + modify_t.size;
 				insert_range.end_addr = end_addr;
+                insert_range.dirty = true;
 				range_cache_iter = range_cache.begin();
 				range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
@@ -1904,8 +1916,10 @@ namespace Hongyi_WatchPoint{
 					range_cache.erase(range_cache_iter);
 					range.cur_range_num--;
 				}
-				else // Else it just changes size.
+				else { // Else it just changes size.
 					range_cache_iter->start_addr = modify_t.addr + modify_t.size;
+                    range_cache_iter->dirty = true;
+                }
 			}
 		}
 #endif
@@ -1932,15 +1946,18 @@ namespace Hongyi_WatchPoint{
 			range_cache_iter = range_cache.begin();//So the only range currently in range_cache is [0, -1]
 			range_cache_iter->start_addr = insert_wp.addr;
 			range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+            range_cache_iter->dirty = true;
 			if (insert_wp.addr != 0) {
 				insert_range.start_addr = 0;
 				insert_range.end_addr = insert_wp.addr - 1;
+                insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
 			if (insert_wp.addr + insert_wp.size != 0) {
 				insert_range.start_addr = insert_wp.addr + insert_wp.size - 1;
 				insert_range.end_addr = -1;
+                insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
@@ -1950,15 +1967,18 @@ namespace Hongyi_WatchPoint{
 			range_cache_iter = Range_load(start_addr, -1, false);
 			range_cache_iter->start_addr = insert_wp.addr;
 			range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+            range_cache_iter->dirty = true;
 			if (insert_wp.addr != start_addr) {
 				insert_range.start_addr = start_addr;
 				insert_range.end_addr = insert_wp.addr - 1;
+                insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
 			if (insert_wp.addr + insert_wp.size != 0) {
 				insert_range.start_addr = insert_wp.addr + insert_wp.size;
 				insert_range.end_addr = -1;
+                insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
@@ -2016,6 +2036,7 @@ namespace Hongyi_WatchPoint{
 		//Add the new merged unwatched range.
 		insert_range.start_addr = ulti_start_addr;
 		insert_range.end_addr = ulti_end_addr;
+        insert_range.dirty = true;
 		range_cache.insert(range_cache_iter, insert_range);
 		range.cur_range_num++;
 #endif
@@ -2044,6 +2065,7 @@ namespace Hongyi_WatchPoint{
 		else {
 			insert_range.start_addr = start_addr;
 			insert_range.end_addr = end_addr;
+            insert_range.dirty = false;
             if (hit_miss_care)
 			    range.miss++;
 		}
@@ -2059,10 +2081,24 @@ namespace Hongyi_WatchPoint{
 		if (range_cache.size() > RANGE_CACHE_SIZE) {
 			typename deque< range_t<ADDRESS> >::iterator iter;
 			range.kick += range_cache.size() - RANGE_CACHE_SIZE;
+            bool found_dirty = false;
 			for (int i = range_cache.size() - RANGE_CACHE_SIZE; i > 0; i--) {
 				iter = range_cache.end() - 1;
+                if(iter->dirty) {
+                    found_dirty = true;
+                    range.kick++;
+                }
 				range_cache.erase(iter);
 			}
+            if (found_dirty) {
+                for (iter = range_cache.begin(); iter != range_cache.end(); iter++) {
+                    if (iter->dirty) {
+                        iter->dirty = false;
+                        range.kick++;
+                    }
+                }
+                range.dirty_kick++;
+            }
 		}
 		range.changes++;
         range.total_cur_range_num += range.cur_range_num;
