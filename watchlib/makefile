@@ -24,7 +24,7 @@ endif
 ifeq ($(TARGET_COMPILER),gnu)
 	TARGET=ia32
     include ../makefile.gnu.config
-    CXXFLAGS ?= -Wall -Werror -Wno-unknown-pragmas $(DBG) $(OPT)
+    CXXFLAGS ?= -g -Wall -Werror -Wno-unknown-pragmas $(DBG) $(OPT)
 endif
 
 ifeq ($(TARGET_COMPILER),ms)
