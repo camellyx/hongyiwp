@@ -1,0 +1,32 @@
+Hi Joe,
+
+Here is the brief idea about how I port trie to range and range to trie:
+
+I did it mainly by introducing another flag into the system that is WA_TRIE. This flag is special since it can only be set or remove alone(not with any combination of WA_READ or WA_WRITE). The idea behind it is to make general_fault collect hit or miss data when the "WA_TRIE" flag is set, otherwise, wp would be treated as "not in the trie system so no need to invoke data collection code".
+
+The problem for this is that in real system, when we wish to port a wide range of address, which may consist of several wp ranges, to trie, we then wish the remaining system in Range_cache would be a large ONE says "this range is now in trie". However, after we set a wide range of wp with the "WA_TRIE" flag on, we still have multiple of wp, the only difference is that they are 1 by 1(adjacent).
+
+So what I need to do is to fake those adjecent watchpoints as "ONE", this includes increasing and decreasing cur_range_num, faking range_load etc.
+
+I then build the system in 2 aspects:
+1. Adding functions that add or remove "WA_TRIE".
+2. Adding code to fake Range_load and cur_range_num etc. within the add_watchpoint and remove_watchpoint functions.
+
+For 1. , what I did is I stopped all automatic range cache operations within Modify_wp() and Erase_wp() etc and handle the watchpoint operation manually. Handling Manually means I would do all the Range_load stuff in range_to_trie and trie_to_range functions. And when ever I encounter any watchpoint with "WA_TRIE" set one, I would look forward and backward and pick out the entire range that is one "WA_TIRE range".
+
+For 2. , when the code encounters a watchpoint with "WA_TRIE" flag, I would try to seek forward and backward to see if there are adjecent watchpoints, and Hold the Range_load until it is confirmed that it walked to the end of a wild "WA_TRIE" range. We don't need to worry too much about 
+
+Several things may help when reading the code.
+1. If several wp makes up "1 TRIE range", then they should be adjecent, which means this->addr = last->addr + last->size.
+2. An unwatched area in TRIE now has a wp, but it has only "WA_TRIE" set on.
+3. Watchpoint operations "not trie_to_range or range_to_trie" won't change the coverage or "TRIE RANGE", which means it won't modify the start_addr or end_addr of a "TRIE range". By this we can isolate out all the range operations from lower level as "Modify_wp" or "Insert_wp" and put them into the higher level functions such as "add_watchpoint" and "rm_watchpoint". That's why I have a condition statement in "Modify_wp" and all other 3 low level range system faking functions. If any of them are dealing with "WA_TRIE", it would stop emulating the range_cache, and hand the operation to the high level.
+
+***I haven't finish the code yet... I got destracted by opening the internet and GRE and extend my VISA... I have spent all the rest hours on this. I think this is the best structure I can think of, other structures are more complicated.
+
+I would keep working on this. The basic API is just 2 functions: range_to_trie and trie_to_range.
+You can start building the arbiter functions while I keep working on this one.
+
+BTW, The code I add is based on a very old version of auto_wp.h. I would port them to the new version tomorrow morning(which is tonight by your time).
+
+Thank you.
+Hongyi Xin
