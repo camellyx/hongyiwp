@@ -12,12 +12,11 @@
 #define WP_H
 #endif
 
-#define		RANGE_CACHE		//Without define this macro, range cache won't be turned on.
+// Without this macro, range cache won't be turned on.
+// Without this macro, page table checking won't be turned on.
 
 #define RANGE_CACHE_SIZE	64
 #define WLB_SIZE 128
-
-// XXX TODO FIXME JLGREATH Make sure MEM_WatchPoint code does the same thing as WatchPoint code.. we've fixed WatchPoint a lot I think JLGREATH FIXME TODO XXX //
 
 using std::cout;
 using std::endl;
@@ -37,8 +36,9 @@ namespace Hongyi_WatchPoint {
 
 	template<class ADDRESS>
 	struct range_t {
-		ADDRESS	start_addr;
-		ADDRESS	end_addr;
+        ADDRESS	start_addr;
+        ADDRESS	end_addr;
+        bool dirty;
 	};
 
 	struct trie_data_t {
@@ -73,6 +73,7 @@ namespace Hongyi_WatchPoint {
 		unsigned long long hit;
 		unsigned long long miss;
 		unsigned long long kick;
+        unsigned long long dirty_kick;
         unsigned int avg_range_num;
 		
 		const range_data_t operator+(const range_data_t &other) const;
@@ -128,6 +129,7 @@ namespace Hongyi_WatchPoint {
 		result.hit += other.hit;
 		result.miss += other.miss;
 		result.kick += other.kick;
+        result.dirty_kick += other.dirty_kick;
 		return result;
 	}
 	
@@ -139,6 +141,7 @@ namespace Hongyi_WatchPoint {
 		hit = 0;
 		miss = 0;
 		kick = 0;
+        dirty_kick = 0;
 	}
 
 	enum PAGE_HIT {TOP, MID, BOT};
@@ -184,26 +187,21 @@ namespace Hongyi_WatchPoint {
 		bool general_fault	(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags,  unsigned long long& top_page, unsigned long long& mid_page, unsigned long long& bot_page, bool lookaside, bool hit_miss_care);
 		PAGE_HIT page_level	(ADDRESS target_addr, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter);
 		void page_break		(PAGE_HIT& before, PAGE_HIT& after);
-		void page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
+		void page_break_same_top (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
+		void page_break_same_mid (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2);
 		
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator	Insert_wp	(const watchpoint_t<ADDRESS, FLAGS>& insert_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter, bool wp_operate);//This would call wp.insert() internally and forward the return value out. But meanwhile it would emulate range cache access
 		void														Modify_wp	(const watchpoint_t<ADDRESS, FLAGS>& modify_t, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter, bool wp_operate);//This would change the value of iter's node. And emualte range cache_access
 		void														Push_back_wp	(const watchpoint_t<ADDRESS, FLAGS>& insert_t, bool wp_operate);//This would call wp.push_back() internally and emulate range_cache access
 		typename deque< watchpoint_t<ADDRESS, FLAGS> >::iterator	Erase_wp	(typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter, bool wp_operate);//This would call wp.erase() internally and forward the return value out. Meanwhile emulate range_cache access
-
         typename deque< range_t<ADDRESS> >::iterator				Range_load	(ADDRESS start_addr,	ADDRESS end_addr, bool hit_miss_care);//
-
 		//Func:		Search within the range_cache, and automatically increment hits and misses.
 		//return:	the iterator that points to the range_t that is [start_addr, end_addr]. If the searched range is not within cache it would be insert at the front(The most recently used).
-
-		void														Range_cleanup(bool range_update);
+		void														Range_cleanup();
 		//Func:		This function would be called in Insert_wp, Modify_wp, Push_back_wp and Erase_wp. It would check if after these calling, is range_cache has overflow? If there are, then increment the kick number.
-
 		deque< watchpoint_t<ADDRESS, FLAGS> >	wp;
-
 		deque< range_t<ADDRESS> >	range_cache;
 		range_data_t	range;
-
 
 		trie_data_t		trie;
         deque< watchpoint_t<ADDRESS, FLAGS> > wlb;
@@ -342,12 +340,14 @@ namespace Hongyi_WatchPoint{
 		if (target_addr != 0) {
 			insert_range.start_addr = 0;
 			insert_range.end_addr = target_addr - 1;
+            insert_range.dirty = false;
 			range_cache.push_back(insert_range);
 			range.cur_range_num++;
 		}
 		if (target_addr + target_size != 0) {
 			insert_range.start_addr = target_addr + target_size;
 			insert_range.end_addr = -1;
+            insert_range.dirty = false;
 			range_cache.push_back(insert_range);
 			range.cur_range_num++;
 		}
@@ -356,14 +356,16 @@ namespace Hongyi_WatchPoint{
 
 	template <class ADDRESS, class FLAGS>
 	WatchPoint<ADDRESS, FLAGS>::WatchPoint(const WatchPoint& parameter) {
+        wp.clear();
 		wp.resize((unsigned long long)parameter.wp.size() );
 		unsigned long long i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
 		}
 		trie = parameter.trie();
-		range_cache.resize = ((unsigned long long)parameter.range_cache.size() );
-		for (i = 0; i < parameter.range_cache(); i++) {
+        range_cache.clear();
+		range_cache.resize ((unsigned long long)parameter.range_cache.size() );
+		for (i = 0; i < parameter.range_cache.size(); i++) {
 			range_cache[i] = parameter.range_cache[i];
 		}
 		range = parameter.range;
@@ -372,7 +374,7 @@ namespace Hongyi_WatchPoint{
 
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::watch_print() {
-		int i;
+        unsigned int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
 			cout << "This is the " << i << "th watchpoint." <<endl;
@@ -427,12 +429,27 @@ namespace Hongyi_WatchPoint{
 		return;
 	}
 	
+	//If start_addr and end_addr are in the same mid, then any break could happen once.
 	template <class ADDRESS, class FLAGS>
-	void WatchPoint<ADDRESS, FLAGS>::page_break_same_range (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
+	void WatchPoint<ADDRESS, FLAGS>::page_break_same_mid (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
 		if (before == TOP && (after_1 != TOP || after_2 != TOP) )
 			trie.top_break++;
 		else if (before == MID && (after_1 == BOT || after_2 == BOT) )
 			trie.mid_break++;
+		return;
+	}
+	
+	//If start_addr and end_addr share the same top but not the same mid, then top break can happen once but mid break may happen twice!
+	template <class ADDRESS, class FLAGS>
+	void WatchPoint<ADDRESS, FLAGS>::page_break_same_top (PAGE_HIT& before, PAGE_HIT& after_1, PAGE_HIT& after_2) {
+		if (before == TOP && (after_1 != TOP || after_2 != TOP) )
+			trie.top_break++;
+		else if (before == MID) {
+			if (after_1 == BOT)
+				trie.mid_break++;
+			if (after_2 == BOT)
+				trie.mid_break++;
+		}
 		return;
 	}
 		
@@ -448,7 +465,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -463,8 +480,10 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
@@ -485,7 +504,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -500,12 +519,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -521,7 +543,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -536,22 +558,30 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags, bool wp_operate) {
+		if (wp_operate) {
+			ADDRESS	start_addr;
+			ADDRESS	end_addr;
+			bool	trie_on = false;//This is the signal say we are in a "wide-range" that flagged as "WA_TRIE".
+			typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator previous_iter;//This one is used only for faking the range_load for WA_TRIE
+			typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator after_iter;//This one is used only for faking the range_load for WA_TRIE
+		}
+
 		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
 		watchpoint_t<ADDRESS, FLAGS> modify_t = {0, 0, 0};
-		ADDRESS	start_addr;
-		ADDRESS	end_addr;
-		bool	trie_on = false;//This is the signal say we are in a "wide-range" that flagged as "WA_TRIE".
 
 		if (target_size == 0) {//This is special for size = 0. As it clears all the current watchpoints and add the whole system as watched.
             watchpoint_t<ADDRESS, FLAGS> temp_val;
@@ -572,8 +602,6 @@ namespace Hongyi_WatchPoint{
 		}
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator start_iter;//This one is used only for merging the front wp nodes.
-		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator previous_iter;//This one is used only for faking the range_load for WA_TRIE
-		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator after_iter;//This one is used only for faking the range_load for WA_TRIE
 
         invalidate_wlb(target_addr, target_size);
 
@@ -594,7 +622,7 @@ namespace Hongyi_WatchPoint{
 					modify_t.addr = iter->addr;
 					modify_t.size = target_size;
 					modify_t.flags = target_flags | iter->flags;
-                   	Modify_wp(modify_t, iter, wp_operate);
+                   	Modify_wp(modify_t,iter, wp_operate);
 					Push_back_wp(insert_t, wp_operate);
 				}
 				else if (target_addr + target_size == 0) {
@@ -638,7 +666,7 @@ namespace Hongyi_WatchPoint{
 					modify_t.size = start_iter->size + target_size;
 					modify_t.flags = start_iter->flags;
 					Modify_wp(modify_t, start_iter, wp_operate);
-					Range_cleanup(true);
+					Range_cleanup();
 					return;
 				}
 			}
@@ -647,10 +675,10 @@ namespace Hongyi_WatchPoint{
 			insert_t.size = target_size;
 			insert_t.flags = target_flags;
 			Push_back_wp(insert_t, wp_operate);
-			Range_cleanup(true);
+			Range_cleanup();
 			return;
 		}
-		
+
 		//Code for faking the "WA_TRIE" ranges, starting part
 		if (wp_operate) {//If add_watchpoint is called by range_to_trie then range operate is handled manully there
 			if (addr_covered(target_addr, (*iter) ) ) {
@@ -675,7 +703,7 @@ namespace Hongyi_WatchPoint{
 							end_addr = after_iter->addr + after_iter->size - 1;
 							after_iter++;
 						}
-						Range_load(start_iter, end_iter);
+						Range_load(start_iter, end_iter, false);
 					}
 				}
 			}
@@ -686,12 +714,11 @@ namespace Hongyi_WatchPoint{
 					end_addr = after_iter->addr + after_iter->size - 1;
 					after_iter++;
 				}
-				Range_load(start_iter, end_iter);
+				Range_load(start_iter, end_iter, false);
 				trie_on = false;
 			}
 		}
-			
-			
+		
 		if (addr_covered (target_addr, (*iter) ) ) {
             // Our current range is covered by a watchpoint
 			if (iter->addr == target_addr) {
@@ -712,7 +739,7 @@ namespace Hongyi_WatchPoint{
 							modify_t.size = iter->size - target_size;
 							modify_t.flags = iter->flags;
 							Modify_wp(modify_t, iter, wp_operate);
-							Range_cleanup(true);
+							Range_cleanup();
 							return;
 						}
                         // If the current insertion is bigger than what it hit
@@ -738,7 +765,7 @@ namespace Hongyi_WatchPoint{
 							Modify_wp(modify_t, iter, wp_operate);
                             insert_t.size = target_size;
 							Insert_wp(insert_t, iter, wp_operate);
-							Range_cleanup(true);
+							Range_cleanup();
 							return;
 						}
                         // Remove old guy because we'll add the new guy below.
@@ -756,7 +783,7 @@ namespace Hongyi_WatchPoint{
 					insert_t.size = target_size;
 					insert_t.flags = target_flags | iter->flags;
 					Insert_wp(insert_t, iter, wp_operate);
-					Range_cleanup(true);
+					Range_cleanup();
 					return;
 				}
 				else {
@@ -856,12 +883,14 @@ namespace Hongyi_WatchPoint{
 		//Iterating part--If we are inserting something that covers multiple old watchpoints,
         //we must appropriately merge them all together.
 		while (iter != wp.end() && iter->addr + iter->size - 1 <= target_addr + target_size - 1) {
-			if (wp_operate) {//Code for faking the "WA_TRIE" ranges
+			
+			//Code for faking the "WA_TRIE" ranges
+			if (wp_operate) {
 				if (trie_on) {//There are previous "WA_TRIE" watchpoints
 					if ( (iter->flags & WA_TRIE) && iter->addr == end_addr + 1)
 						end_addr = iter->addr +iter->size - 1;
 					else {
-						Range_load(start_addr, end_addr);//The last "WA_TRIE" range ends and we fake the range load
+						Range_load(start_addr, end_addr, false);//The last "WA_TRIE" range ends and we fake the range load
 						if (iter->flags & WA_TRIE) {
 							start_addr = iter->addr;
 							end_addr = iter->addr + iter->size - 1;
@@ -878,7 +907,6 @@ namespace Hongyi_WatchPoint{
 					}
 				}
 			}
-				
             // We only need to perform this while our insertion guy reaches past the end of each iterator
 			if (iter->addr != insert_t.addr + insert_t.size) {
                 //If there is some blank between our current insert node start address and the iterator
@@ -912,13 +940,15 @@ namespace Hongyi_WatchPoint{
         }
 		
 		//Ending part - Insert the last large watchpoint.
-		if (wp_operate) {//Code for faking the "WA_TRIE" ranges
+		
+		//Code for faking the "WA_TRIE" ranges
+		if (wp_operate) {
 			if (iter != wp.end() && addr_covered(target_addr + target_size - 1, (*iter) ) ) {
 				if (trie_on) {//There are previous "WA_TRIE" watchpoints
 					if ( (iter->flags & WA_TRIE) && iter->addr == end_addr + 1)
 						end_addr = iter->addr +iter->size - 1;
 					else {
-						Range_load(start_addr, end_addr);//The last "WA_TRIE" range ends and we fake the range load
+						Range_load(start_addr, end_addr, false);//The last "WA_TRIE" range ends and we fake the range load
 						if (iter->flags & WA_TRIE) {
 							start_addr = iter->addr;
 							end_addr = iter->addr + iter->size - 1;
@@ -940,12 +970,13 @@ namespace Hongyi_WatchPoint{
 						end_addr = after_iter->addr + after_iter->size - 1;
 						after_iter++;
 					}
-					Range_load(start_iter, end_iter);
+					Range_load(start_iter, end_iter, false);
 				}
 			}
 			else if (trie_on)
 				range_load(start_addr, end_addr);
 		}
+		
 		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {
             //If it's the end of the deque or the end+1 address is not covered by any wp
 			//Then we simply add the watchpoint onto the end.
@@ -1041,20 +1072,27 @@ namespace Hongyi_WatchPoint{
 				iter++;
 			}
 		}
-		Range_cleanup(true);
+		Range_cleanup();
 		return;
 	}
 
     template <class ADDRESS, class FLAGS>
     void WatchPoint<ADDRESS, FLAGS>::invalidate_wlb (ADDRESS target_addr, ADDRESS target_size) {
         typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
-        for (iter = wlb.begin(); iter != wlb.end(); iter++) {
+        for (iter = wlb.begin(); iter != wlb.end(); ) {
             if (((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                 // Some overlap occurred
-                iter = wlb.erase(iter);
-                // The ++ will make us skip the new value if we don't back off.
-                iter--;
+                // If we're at the bottom level, we don't need to invalidate
+                // the entry, just update its internal values.  This can be
+                // done with a WLB-update instruction that also writes
+                // to a location in the memory system, for instance.
+                if(iter->size == 16)
+                    iter++;
+                else
+                    iter = wlb.erase(iter);
             }
+            else
+                iter++;
         }
     }
 	
@@ -1119,12 +1157,12 @@ namespace Hongyi_WatchPoint{
 				}
 				Insert_wp(insert_t, iter, wp_operate);
 			}
-			Range_cleanup(true);
+			Range_cleanup();
 			return;
 		}
 		
 		if (iter == wp.end() ) {
-			Range_cleanup(true);
+			Range_cleanup();
 			return;
 		}
 		
@@ -1152,7 +1190,7 @@ namespace Hongyi_WatchPoint{
 							end_addr = after_iter->addr + after_iter->size - 1;
 							after_iter++;
 						}
-						Range_load(start_iter, end_iter);
+						Range_load(start_iter, end_iter, false);
 						trie_on = false;
 					}
 				}
@@ -1164,7 +1202,7 @@ namespace Hongyi_WatchPoint{
 					end_addr = after_iter->addr + after_iter->size - 1;
 					after_iter++;
 				}
-				Range_load(start_iter, end_iter);
+				Range_load(start_iter, end_iter, false);
 			}
 		}
 		
@@ -1186,7 +1224,7 @@ namespace Hongyi_WatchPoint{
 						Insert_wp(insert_t, iter, wp_operate);
 					}
 				}
-				Range_cleanup(true);
+				Range_cleanup();
 				return;
 			}
 			if (target_flags & iter->flags) {
@@ -1225,18 +1263,19 @@ namespace Hongyi_WatchPoint{
 					}
 				}
 			}
-			Range_cleanup(true);
+			Range_cleanup();
 			return;
 		}
 
 		//iterating part		
 		while (iter != wp.end() && iter->addr + iter->size - 1 < target_addr + target_size - 1) {
-			if (wp_operate) {//Code for faking the "WA_TRIE" ranges
+			//Code for faking the "WA_TRIE" ranges
+			if (wp_operate) {
 				if (trie_on) {//There are previous "WA_TRIE" watchpoints
 					if ( (iter->flags & WA_TRIE) && iter->addr == end_addr + 1)
 						end_addr = iter->addr +iter->size - 1;
 					else {
-						Range_load(start_addr, end_addr);//The last "WA_TRIE" range ends and we fake the range load
+						Range_load(start_addr, end_addr, false);//The last "WA_TRIE" range ends and we fake the range load
 						if (iter->flags & WA_TRIE) {
 							start_addr = iter->addr;
 							end_addr = iter->addr + iter->size - 1;
@@ -1280,13 +1319,14 @@ namespace Hongyi_WatchPoint{
 		}
 		
 		//ending part
-		if (wp_operate) {//Code for faking the "WA_TRIE" ranges
+		//Code for faking the "WA_TRIE" ranges
+		if (wp_operate) {
 			if (iter != wp.end() && addr_covered(target_addr + target_size - 1, (*iter) ) ) {
 				if (trie_on) {//There are previous "WA_TRIE" watchpoints
 					if ( (iter->flags & WA_TRIE) && iter->addr == end_addr + 1)
 						end_addr = iter->addr +iter->size - 1;
 					else {
-						Range_load(start_addr, end_addr);//The last "WA_TRIE" range ends and we fake the range load
+						Range_load(start_addr, end_addr, false);//The last "WA_TRIE" range ends and we fake the range load
 						if (iter->flags & WA_TRIE) {
 							start_addr = iter->addr;
 							end_addr = iter->addr + iter->size - 1;
@@ -1308,7 +1348,7 @@ namespace Hongyi_WatchPoint{
 						end_addr = after_iter->addr + after_iter->size - 1;
 						after_iter++;
 					}
-					Range_load(start_iter, end_iter);
+					Range_load(start_iter, end_iter, false);
 				}
 			}
 			else if (trie_on)
@@ -1369,7 +1409,7 @@ namespace Hongyi_WatchPoint{
  			//previous_iter->size += iter->size;
  			iter = Erase_wp(iter, wp_operate);
  		}
- 		Range_cleanup(true);
+ 		Range_cleanup();
 		return;
 	}
 	
@@ -1385,7 +1425,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1402,12 +1442,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1423,7 +1466,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1441,12 +1484,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1462,7 +1508,7 @@ namespace Hongyi_WatchPoint{
 
 		beg_iter = search_address(target_addr, wp);
 		end_iter = search_address(target_addr + target_size - 1, wp);
-		if (beg_iter == end_iter && addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) )
+		if (beg_iter == end_iter && (beg_iter == wp.end() || addr_covered(target_addr, *beg_iter) == addr_covered(target_addr + target_size - 1, *end_iter) ) )
 			same_range_flag = true;
 		begin_hit_before = page_level (target_addr, beg_iter);
 		end_hit_before = page_level (target_addr + target_size - 1, end_iter);
@@ -1480,12 +1526,15 @@ namespace Hongyi_WatchPoint{
 		begin_hit_after = page_level (target_addr, beg_iter);
 		end_hit_after = page_level (target_addr + target_size - 1, end_iter);
 		
-		if (same_range_flag)
-			page_break_same_range (begin_hit_before, begin_hit_after, end_hit_after);//To prevent doulbe counting if beg_addr and end_addr fall into same RANGE.
+		if (same_range_flag && (target_addr & ~(4095) ) == ( (target_addr + target_size - 1) & ~(4095) ) )//Check if they are in the same mid page first.
+			page_break_same_mid (begin_hit_before, begin_hit_after, end_hit_after);
+		else if (same_range_flag && (target_addr & ~(4194303) ) == ( (target_addr + target_size - 1) & ~(4194303) ) )
+			page_break_same_top (begin_hit_before, begin_hit_after, end_hit_after);//To prevent double counting for top break if start
 		else {
 			page_break (begin_hit_before, begin_hit_after);
 			page_break (end_hit_before, end_hit_after);
 		}
+		
 		return;
 	}
 	
@@ -1508,58 +1557,59 @@ namespace Hongyi_WatchPoint{
                 }
             }
             // TODO: We need to find a way to just "always hit" in the range cache.
-            Range_load(0, -1, hit_miss_care);
-            Range_cleanup(false);
+            //Range_load(0, -1, hit_miss_care);
+            //Range_cleanup();
 			return false;
 		}
 
         // Check the Lookaside buffer and update its LRU status.  See if we WLB hit.
         if (lookaside) {
-            for (iter = wlb.begin(); iter != wlb.end(); iter++) {
+            deque<watchpoint_t<ADDRESS, FLAGS> > guys_to_push;
+            for (iter = wlb.begin(); iter != wlb.end();) {
                 if(((iter->addr + iter->size) > target_addr) && (iter->addr < (target_addr + target_size))) {
                     did_hit = 1;
                     if (iter->size == 0) {
                         trie.wlb_hit_top++;
                         break;
                     }
-                    temp_val = *iter;
+                    guys_to_push.push_back(*iter);
                     iter = wlb.erase(iter);
-                    wlb.push_front(temp_val);
-                    // Iterator can't be pointing to beginning, so decr. here and for loop will then incr.
-                    iter--;
                 }
+                else
+                    iter++;
             }
+            for (iter = guys_to_push.begin(); iter != guys_to_push.end(); iter++) {
+                wlb.push_front(*iter);
+            }
+            guys_to_push.clear();
         }
 
 		iter = search_address(target_addr, wp);
 		
 		if (iter != wp.end() && iter->size == 0) {
             //This is special for size = 0
-            if (iter->flags & WA_TRIE) {
-	            if (lookaside) {
-	                // If there's anything in the WLB, it must be the value pointing to "everything".
-	                if (wlb.size())
-	                    trie.wlb_hit_top++;
-	                else {
-	                    // Otherwise WLB must load the single value.  This was a miss.
-	                    temp_val.addr = 0;
-	                    temp_val.size = -1;
-	                    temp_val.flags = WA_READ|WA_WRITE;
-	                    wlb.push_front(temp_val);
-	                    trie.wlb_miss_top++;
-	                }
-	            }
-				top_page++;
-			}
+            if (lookaside) {
+                // If there's anything in the WLB, it must be the value pointing to "everything".
+                if (wlb.size())
+                    trie.wlb_hit_top++;
+                else {
+                    // Otherwise WLB must load the single value.  This was a miss.
+                    temp_val.addr = 0;
+                    temp_val.size = -1;
+                    temp_val.flags = WA_READ|WA_WRITE;
+                    wlb.push_front(temp_val);
+                    trie.wlb_miss_top++;
+                }
+            }
+			top_page++;
 			Range_load(0, -1, hit_miss_care);
-            Range_cleanup(false);
+            Range_cleanup();
 			return (iter->flags & target_flags);
 		}
 		if (iter == wp.end() ) {
             // Not only was the value not in the watchpoint system, we're also at the end of the queue.
 			if (iter != wp.begin() ) {
 				iter--;
-				/*
                 temp_val.flags = WA_WRITE|WA_READ;
 				if (iter->addr + iter->size -1 >= (target_addr & ~(4095) ) ) {
                     // Is the last watchpoint (we missed) on the same 4K page as our target?
@@ -1609,14 +1659,12 @@ namespace Hongyi_WatchPoint{
                         wlb.pop_back();
                     wlb.push_front(temp_val);
                 }
-                */
 				Range_load(iter->addr + iter->size, -1, hit_miss_care);
 			}
 			else {
                 // Empty watchpoint case.  We're both beginning and end.
                 // Range cache should cover all of memory with "no watchpoint"
 				Range_load(0, -1, hit_miss_care);
-                /*
                 if (lookaside) {
                     // Lookaside agrees.  No watchpoints, so entry covers all memory.
                     if (!did_hit) {
@@ -1633,9 +1681,8 @@ namespace Hongyi_WatchPoint{
                         trie.wlb_hit_top++;
                 }
 				top_page++;
-				*/
 			}
-            Range_cleanup(false);
+            Range_cleanup();
 			return false;
 		}
 
@@ -1770,7 +1817,7 @@ namespace Hongyi_WatchPoint{
                 wlb.pop_back();
             wlb.push_front(temp_val);
         }
-        Range_cleanup(false);
+        Range_cleanup();
 		
 		//	cout << "Exited general_fault" << endl;
 		return wp_fault;
@@ -1801,12 +1848,12 @@ namespace Hongyi_WatchPoint{
 		trie = trie_data_t();
 		return;
 	}
- 
+
 	template <class ADDRESS, class FLAGS>
 	range_data_t WatchPoint<ADDRESS, FLAGS>::get_range_data() {
 		return range;
 	}
-		
+
 	template <class ADDRESS, class FLAGS>
 	void WatchPoint<ADDRESS, FLAGS>::range_to_trie	(ADDRESS target_addr, ADDRESS target_size) {
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
@@ -1887,7 +1934,7 @@ namespace Hongyi_WatchPoint{
 			
 			else {
 				if (target_addr == iter->addr) {
-					range_cache_iter = Range_load(iter->addr, iter->addr + iter->size - 1);
+					range_cache_iter = Range_load(iter->addr, iter->addr + iter->size - 1, false);
 					if (iter->size > target_size) {
 						range_cache_iter->addr = target_addr + target_size;
 						range_cache_iter->size = iter->size - target_size;
@@ -1901,11 +1948,11 @@ namespace Hongyi_WatchPoint{
 					}
 				}
 				else {
-					range_cache_iter = Range_load(iter->addr, iter->addr + iter->size - 1);
+					range_cache_iter = Range_load(iter->addr, iter->addr + iter->size - 1, false);
 					range_cache_iter->size = iter->addr - iter->addr;
 					if (iter->addr +  iter->size - 1 > target_addr + target_size - 1) {
-						Range_load(target_addr, target_addr + target_size - 1);
-						Range_load(target_addr + target_size, iter->addr + iter->size - 1);
+						Range_load(target_addr, target_addr + target_size - 1, false);
+						Range_load(target_addr + target_size, iter->addr + iter->size - 1, false);
 						add_watchpoint (target_addr, target_size, WA_TRIE, false);
 						return;
 					}
@@ -1963,7 +2010,7 @@ namespace Hongyi_WatchPoint{
 			start_addr = (iter - 1)->addr + (iter - 1)->size;
 			end_addr = iter->addr - 1;
 			if (start_addr <= end_addr) {//There is an "unwatched range that need to be deleted"
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				range_cache.erase(range_cache_iter);
 			}
 			
@@ -1989,7 +2036,7 @@ namespace Hongyi_WatchPoint{
 			else {
 				start_addr = iter->addr;
 				end_addr = iter->addr + iter->size - 1;
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				range_cache.erase(range_cache_iter);
 			}
 		}
@@ -2005,7 +2052,7 @@ namespace Hongyi_WatchPoint{
 				
 			range_cache_iter = Range_load(start_addr, end_addr, false);
 			if (start_addr <= end_addr) {
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				if (target_addr + target_size - 1 != end_addr)//先检查是否有空白，然后再检查空白是delete还是modify
 					range_cache_iter->start_addr = target_addr + target_size;
 				else
@@ -2044,7 +2091,7 @@ namespace Hongyi_WatchPoint{
 			else {
 				start_addr = iter->addr;
 				end_addr = iter->addr + iter->size - 1;
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				range_cache_iter->start_addr = target_addr + target_size;
 				add_watchpoint (target_addr, target_size, WA_TRIE, false);
 				return;
@@ -2091,7 +2138,7 @@ namespace Hongyi_WatchPoint{
 				end_addr = iter->addr + iter->size - 1;
 				iter++;
 			}
-			range_cache_iter = Range_load(start_addr, end_addr);
+			range_cache_iter = Range_load(start_addr, end_addr, false);
 			range_cache.erase(range_cache_iter);
 			if (start_addr < target_addr) {
 				insert_range.start_addr = start_addr;
@@ -2120,7 +2167,7 @@ namespace Hongyi_WatchPoint{
 					end_addr = iter->addr + iter->size - 1;
 					iter++;
 				}
-				range_cache_iter = Range_load(start_addr, end_addr);
+				range_cache_iter = Range_load(start_addr, end_addr, false);
 				range_cache.erase(range_cache_iter);
 				if (end_addr > target_addr + target_size - 1) {
 					insert_range.start_addr = target_addr + target_size;
@@ -2143,7 +2190,6 @@ namespace Hongyi_WatchPoint{
 		
 		return;
 	}
-		
 	
 	template <class ADDRESS, class FLAGS>
 	typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator WatchPoint<ADDRESS, FLAGS>::Insert_wp (const watchpoint_t<ADDRESS, FLAGS>& insert_wp, typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter, bool wp_operate) {
@@ -2163,15 +2209,18 @@ namespace Hongyi_WatchPoint{
 			range_cache_iter = Range_load(start_addr, end_addr, false);//as insert must be insert into some kinds of blank, so there must be an unwatched range.
 			range_cache_iter->start_addr = insert_wp.addr;//Change the size of the unwatched range, and make it as watched range.
 			range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+	        range_cache_iter->dirty = true;
 			if (start_addr != insert_wp.addr) {//split front
 				insert_range.start_addr = start_addr;
 				insert_range.end_addr = insert_wp.addr - 1;
+	            insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
 			if (end_addr != insert_wp.addr + insert_wp.size - 1) {//split back
 				insert_range.start_addr = insert_wp.addr + insert_wp.size;
 				insert_range.end_addr = end_addr;
+	            insert_range.dirty = true;
 				range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 				range.cur_range_num++;
 			}
@@ -2199,6 +2248,7 @@ namespace Hongyi_WatchPoint{
 	                // Because of this, we need to add a new region into the system that contains our "shrink" of the beginning if iter.
 					insert_range.end_addr = modify_t.addr - 1;
 					insert_range.start_addr = start_addr;
+	                insert_range.dirty = true;
 					//range_cache_iter = range_cache.begin();
 					//range_cache.insert(range_cache_iter, insert_range);
 	                // Delay this insertion so that the Range_load() below so it doesn't detect this range instead!
@@ -2224,6 +2274,7 @@ namespace Hongyi_WatchPoint{
 			range_cache_iter = Range_load(start_addr, end_addr, false);
 			range_cache_iter->start_addr = modify_t.addr;
 			range_cache_iter->end_addr = modify_t.addr + modify_t.size - 1;
+	        range_cache_iter->dirty = true;
 	        if (delay_insert) {
 	            range_cache_iter = range_cache.begin();
 	            range_cache.insert(range_cache_iter, insert_range);
@@ -2239,6 +2290,7 @@ namespace Hongyi_WatchPoint{
 	                // The old end touched the guy after him, so no watchpoints in between them.  We need to insert a new range between the two.
 					insert_range.start_addr = modify_t.addr + modify_t.size;
 					insert_range.end_addr = end_addr;
+	                insert_range.dirty = true;
 					range_cache_iter = range_cache.begin();
 					range_cache.insert(range_cache_iter, insert_range);
 					range.cur_range_num++;
@@ -2252,8 +2304,10 @@ namespace Hongyi_WatchPoint{
 						range_cache.erase(range_cache_iter);
 						range.cur_range_num--;
 					}
-					else // Else it just changes size.
+					else { // Else it just changes size.
 						range_cache_iter->start_addr = modify_t.addr + modify_t.size;
+	                    range_cache_iter->dirty = true;
+	                }
 				}
 			}
 		}
@@ -2278,17 +2332,24 @@ namespace Hongyi_WatchPoint{
 				}
 				Range_load(0, -1, false);//This is used just to increment hit.
 				range_cache_iter = range_cache.begin();//So the only range currently in range_cache is [0, -1]
+	            if(range_cache_iter == range_cache.end()) {
+	                fprintf(stderr, "Incorrect range cache iter in Push_back_wp\n");
+	                exit(-1);
+	            }
 				range_cache_iter->start_addr = insert_wp.addr;
 				range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+	            range_cache_iter->dirty = true;
 				if (insert_wp.addr != 0) {
 					insert_range.start_addr = 0;
 					insert_range.end_addr = insert_wp.addr - 1;
+	                insert_range.dirty = true;
 					range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 					range.cur_range_num++;
 				}
 				if (insert_wp.addr + insert_wp.size != 0) {
-					insert_range.start_addr = insert_wp.addr + insert_wp.size;
+					insert_range.start_addr = insert_wp.addr + insert_wp.size - 1;
 					insert_range.end_addr = -1;
+	                insert_range.dirty = true;
 					range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 					range.cur_range_num++;
 				}
@@ -2298,15 +2359,18 @@ namespace Hongyi_WatchPoint{
 				range_cache_iter = Range_load(start_addr, -1, false);
 				range_cache_iter->start_addr = insert_wp.addr;
 				range_cache_iter->end_addr = insert_wp.addr + insert_wp.size - 1;
+	            range_cache_iter->dirty = true;
 				if (insert_wp.addr != start_addr) {
 					insert_range.start_addr = start_addr;
 					insert_range.end_addr = insert_wp.addr - 1;
+	                insert_range.dirty = true;
 					range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 					range.cur_range_num++;
 				}
 				if (insert_wp.addr + insert_wp.size != 0) {
 					insert_range.start_addr = insert_wp.addr + insert_wp.size;
 					insert_range.end_addr = -1;
+	                insert_range.dirty = true;
 					range_cache_iter = range_cache.insert(range_cache_iter, insert_range);
 					range.cur_range_num++;
 				}
@@ -2326,7 +2390,6 @@ namespace Hongyi_WatchPoint{
 			range_t<ADDRESS>	insert_range;
 			typename deque< range_t<ADDRESS> >::iterator	range_cache_iter;
 			
-			range_cache_iter = range_cache.begin();
 			//Front Blank
 			end_addr = iter->addr - 1;
 			
@@ -2364,6 +2427,7 @@ namespace Hongyi_WatchPoint{
 			//Add the new merged unwatched range.
 			insert_range.start_addr = ulti_start_addr;
 			insert_range.end_addr = ulti_end_addr;
+	        insert_range.dirty = true;
 			range_cache.insert(range_cache_iter, insert_range);
 			range.cur_range_num++;
 		}
@@ -2391,6 +2455,7 @@ namespace Hongyi_WatchPoint{
 		else {
 			insert_range.start_addr = start_addr;
 			insert_range.end_addr = end_addr;
+            insert_range.dirty = false;
             if (hit_miss_care)
 			    range.miss++;
 		}
@@ -2400,22 +2465,34 @@ namespace Hongyi_WatchPoint{
 	}
 
 	template <class ADDRESS, class FLAGS>
-	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup(bool range_update) {
+	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup() {
 		if (range_cache.size() > RANGE_CACHE_SIZE) {
 			typename deque< range_t<ADDRESS> >::iterator iter;
-			range.kick += range_cache.size() - RANGE_CACHE_SIZE;
+            range.kick += range_cache.size() - RANGE_CACHE_SIZE;
+            bool found_dirty = false;
 			for (int i = range_cache.size() - RANGE_CACHE_SIZE; i > 0; i--) {
 				iter = range_cache.end() - 1;
+                if(iter->dirty) {
+                    found_dirty = true;
+                    range.kick++;
+                }
 				range_cache.erase(iter);
 			}
+            if (found_dirty) {
+                for (iter = range_cache.begin(); iter != range_cache.end(); iter++) {
+                    if (iter->dirty) {
+                        iter->dirty = false;
+                        range.kick++;
+                    }
+                }
+                range.dirty_kick++;
+            }
 		}
-		if (range_update) {
-			range.changes++;
-	        range.total_cur_range_num += range.cur_range_num;
-			
-			if (range.cur_range_num > range.max_range_num)
-				range.max_range_num = range.cur_range_num;
-		}
+		range.changes++;
+        range.total_cur_range_num += range.cur_range_num;
+		
+		if (range.cur_range_num > range.max_range_num)
+			range.max_range_num = range.cur_range_num;
 		return;
 	}
 
@@ -2435,8 +2512,9 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	MEM_WatchPoint<ADDRESS, FLAGS>::MEM_WatchPoint(const MEM_WatchPoint& parameter) {
+        wp.clear();
 		wp.resize((int)parameter.wp.size());
-		int i;
+        unsigned int i;
 		for (i = 0; i < parameter.wp.size(); i++) {
 			wp[i] = parameter.wp[i];
 		}
@@ -2451,7 +2529,7 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void MEM_WatchPoint<ADDRESS, FLAGS>::watch_print() {
-		int i;
+        unsigned int i;
 		cout << "There are " << wp.size() << " watchpoints" << endl;
 		for (i = 0; i < (int)wp.size(); i++) {
 			cout << "This is the " << i << "th watchpoint." <<endl;
@@ -2482,20 +2560,72 @@ namespace Hongyi_WatchPoint{
 		add_watchpoint (target_addr, target_size, WA_WRITE);
 		return;
 	}
-	
+
 	template <class ADDRESS, class FLAGS>
 	void MEM_WatchPoint<ADDRESS, FLAGS>::add_watchpoint(ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
-		if (target_size == 0)
-			return;
 		watchpoint_t<ADDRESS, FLAGS> insert_t = {0, 0, 0};
+
+        // This is special for size=0.  As it clears all the current
+        // watchpoints and adds the whole system as watched.
+        if (target_size == 0) {
+            wp.clear();
+            insert_t.flags = target_flags;
+            wp.push_back(insert_t);
+            return;
+        }
+
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator start_iter;//This one is used only for merging the front wp nodes.
 		iter = search_address(target_addr, wp);
 		
+        if (iter != wp.end() && iter->size == 0) { // This is special for size = 0.  It would then check for flag inclusion and split it if necessary.
+            // If the flags between the all-memory iterator and the newly-added
+            // watchpoint are different, we need to either update the old WP,
+            // or split the all-memory WP into multiple pieces.
+            if (!flag_inclusion(target_flags, iter->flags) ) {
+                if (target_addr == 0) {
+                    // If the new region is at the beginning of memory, split WP in two
+                    insert_t.addr = target_addr + target_size;
+                    insert_t.size = 0 - insert_t.addr;
+                    insert_t.flags = iter->flags;
+                    iter->size = target_size;
+                    iter->flags = target_flags | iter->flags;
+                    wp.push_back(insert_t);
+                }
+                else if (target_addr + target_size == 0) {
+                    // If the new region is at the end of memory, split WP in two.
+                    insert_t.addr = target_addr;
+                    insert_t.size = target_size;
+                    insert_t.flags = iter->flags | target_flags;
+                    wp.push_back(insert_t);
+                    iter->size = target_addr;
+                }
+                else {
+                    // If the new region is in the middle, split WP into three.
+                    insert_t.addr = 0;
+                    insert_t.size = target_addr;
+                    insert_t.flags = iter->flags;
+                    iter->addr = target_addr;
+                    iter->size = target_size;
+                    iter->flags = target_flags | iter->flags;
+                    wp.insert(iter, insert_t);
+                    insert_t.addr = target_addr + target_size;
+                    insert_t.size = 0 - insert_t.addr;
+                    insert_t.flags = iter->flags;
+                    wp.push_back(insert_t);
+                }
+            }
+            return;
+        }
+
 		if (iter == wp.end() ) {
-			if (iter != wp.begin() ) {//We'll need to check if there is some wp ahead of iter and if there is then we need to decide whether merge the two.
+            // Not found, and the last WP doesn't even reac our address.
+			if (iter != wp.begin() ) {
+                // Check if there is some WP before iter; if there is, we
+                // potentially need to merge them into one.
 				start_iter = iter - 1;
-				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {//Merge condition.
+				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {
+                    //Merge condition.
 					start_iter->size = start_iter->size + target_size;//Merge by enlarging the former wp node.
 					return;
 				}
@@ -2506,27 +2636,41 @@ namespace Hongyi_WatchPoint{
 			wp.push_back(insert_t);
 			return;
 		}
+
 		if (addr_covered (target_addr, (*iter) ) ) {
-			if (iter->addr == target_addr) {//We will only need to consider merging if this is true.
+            // Our current range is covered by a watchpoint
+			if (iter->addr == target_addr) {
+                //We will only need to consider merging if this is true.
 				if (iter != wp.begin() ) {
 					start_iter = iter - 1;
-					if(start_iter->addr + start_iter->size == target_addr && start_iter->flags == (iter->flags | target_flags) ) {//We will have to merge the two node.
-						insert_t.addr = start_iter->addr;
-						insert_t.flags = start_iter->flags;
-						if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {
+					if(start_iter->addr + start_iter->size == target_addr && start_iter->flags == (iter->flags | target_flags) ) {
+                        //We will have to merge the two node.
+                        if (iter->addr + iter->size - 1 > target_addr + target_size - 1 && !flag_inclusion (target_flags, iter->flags) ) {
+                            // If the thing we actually hit encompasses this
+                            // watchpoint, we must split it.
 							start_iter->size += target_size;
 							iter->addr = target_addr + target_size;
 							iter->size -= target_size;
 							return;
 						}
+                        // If the current insertion is bigger than what it hit
+                        // Just delete the old two guys and replace it with a
+                        // large range.  If you have [start_iter][iter][third]
+                        // and you added range overflows into a third (or more)
+                        // the iterating code below covers it.
+                        insert_t.addr = start_iter->addr;
 						insert_t.size = start_iter->size + iter->size;
+                        insert_t.flags = start_iter->flags;
 						iter = wp.erase(start_iter);
 						iter = wp.erase(iter);
 					}
 					else {
+                        // They don't touch, so theres no merging to take place
 						insert_t.addr = iter->addr;
 						insert_t.flags = iter->flags | target_flags;
-						if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {
+						if (iter->addr + iter->size - 1 > target_addr + target_size - 1 && !flag_inclusion (target_flags, iter->flags) ) {
+                            // We will need to split the range into two if the
+                            // iter encompasses the insertion & flags differ.
 							iter->size = iter->size - target_size;
 							iter->addr = target_addr + target_size;
 							insert_t.size = target_size;
@@ -2537,7 +2681,9 @@ namespace Hongyi_WatchPoint{
 						iter = wp.erase(iter);//iter is incremented.
 					}
 				}
-				else if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {//Needs split
+				else if (iter->addr + iter->size > target_addr + target_size && !flag_inclusion (target_flags, iter->flags) ) {
+                    // Nobody before us.  We are completely encompassed, so
+                    // split into 2.
 					iter->size = iter->size - target_size;
 					iter->addr = target_addr + target_size;
 					insert_t.addr = target_addr;
@@ -2547,22 +2693,32 @@ namespace Hongyi_WatchPoint{
 					return;
 				}
 				else {
+                    // Just 'extend' the range of the old guy below.  Get rid
+                    // of him here.
 					insert_t.addr = iter->addr;
 					insert_t.size = iter->size;
 					insert_t.flags = iter->flags | target_flags;
 					iter= wp.erase(iter);
 				}
 			}
-			else {//Otherwise, we will need to consider splitting
-				if (flag_inclusion (target_flags, iter->flags) ) {//if the flag is included
+			else {
+                // We aren't aligned with the front of our hit range.
+                // We will need to consider splitting.
+				if (flag_inclusion (target_flags, iter->flags) ) {
+                    //if the flag is included
 					//then just mark the node as "to be inserted"
 					insert_t.addr = iter->addr;
 					insert_t.size = iter->size;
 					insert_t.flags = iter->flags;
-					iter = wp.erase(iter);//!!As this watchpoint node is erased, iter automatically increments by 1.
+					iter = wp.erase(iter);
+                    //!!As this watchpoint node is erased, iter automatically increments by 1.
 				}
-				else {//if the flag is not included, we then need to split the watchpoint
-					if (iter->addr + iter->size > target_addr + target_size) {
+				else {
+                    //if the flag is not included, we then need to split the watchpoint
+					if (iter->addr + iter->size - 1 > target_addr + target_size - 1) {
+                        // Completely contained within the iter watchpoint,
+                        // so split into 3.
+                        // Insert third partition.
 						insert_t.size = iter->addr + iter->size - target_addr - target_size;
 						insert_t.addr = target_addr + target_size;
 						insert_t.flags = iter->flags;
@@ -2575,6 +2731,8 @@ namespace Hongyi_WatchPoint{
 						iter = wp.insert(iter, insert_t);
 						return;
 					}
+                    // This guy flies off the end of the current watchpoint.
+                    // Just shrink the beginning and add WP at the end.
 					insert_t.size = iter->addr + iter->size - target_addr;
 					insert_t.addr = target_addr;
 					insert_t.flags = target_flags | iter->flags;
@@ -2583,21 +2741,25 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 		}
-		else {//The target_addr is not covered at all by the iterator.
-			if (iter != wp.begin()) {//Check if the watchpoint to be added should be merged with an wp before it.
+		else {
+            //The target_addr is not covered at all by the iterator.
+			if (iter != wp.begin()) {
+                //Check to see if the WP to be added should be merged with a WP before it.
 				start_iter = iter - 1;
 				if (start_iter->addr + start_iter->size == target_addr && start_iter->flags == target_flags) {
+                    // Merge them!
 					insert_t.addr = start_iter->addr;
-					if (iter->addr < target_addr + target_size)
+					if (iter->addr <= target_addr + target_size - 1) // Need to potentially merge end with iter below
 						insert_t.size = iter->addr - insert_t.addr;
 					else
-						insert_t.size = target_size + target_addr - insert_t.addr;
+						insert_t.size = target_size + target_addr - insert_t.addr; // Add insert onto the end
 					insert_t.flags = target_flags;
-					iter = wp.erase(start_iter);
+					iter = wp.erase(start_iter); // Erase old guy
 				}
 				else {
+                    // Else we will have just a regular insertion.
 					insert_t.addr = target_addr;
-					if (iter->addr < target_addr + target_size)
+					if (iter->addr <= target_addr + target_size - 1) // Need to potentially merge end with iter below
 						insert_t.size = iter->addr - target_addr;
 					else
 						insert_t.size = target_size;
@@ -2605,8 +2767,10 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 			else {
+                // This should become the first watchpoint in the system.
+                // May need to merge the end, but not the beginning.
 				insert_t.addr = target_addr;
-				if (iter->addr < target_addr + target_size)
+				if (iter->addr <= target_addr + target_size - 1)
 					insert_t.size = iter->addr - target_addr;
 				else
 					insert_t.size = target_size;
@@ -2615,12 +2779,18 @@ namespace Hongyi_WatchPoint{
 		}
 		
 		
-		//Iterating part
-		while (iter != wp.end() && iter->addr + iter->size <= target_addr + target_size) {
-			if (iter->addr != insert_t.addr + insert_t.size) {//If there is some blank between the two nodes.
-				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
+		//Iterating part--If we are inserting something that covers multiple old watchpoints,
+        //we must appropriately merge them all together.
+		while (iter != wp.end() && iter->addr + iter->size - 1 <= target_addr + target_size - 1) {
+            // We only need to perform this while our insertion guy reaches past the end of each iterator
+			if (iter->addr != insert_t.addr + insert_t.size) {
+                //If there is some blank between the two nodes.
+				if (insert_t.flags == target_flags) {
+                    //If the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = iter->addr - insert_t.addr;
-				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
+                }
+				else {
+                    //if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
 					iter = wp.insert(iter, insert_t);
 					iter++;
 					insert_t.addr = insert_t.addr + insert_t.size;
@@ -2628,26 +2798,34 @@ namespace Hongyi_WatchPoint{
 					insert_t.flags = target_flags;
 				}
 			}
-			if (insert_t.flags == (iter->flags | target_flags) )//then we will need to merge the two node, by just enlarging the insert_t size
+			if (insert_t.flags == (iter->flags | target_flags) ) {
+                //then we will need to merge the two node, by just enlarging the insert_t size
 				insert_t.size = insert_t.size + iter->size;
-			else {//if not, then we will first insert insert_t into wp, and update insert_t.
+            }
+			else {
+                //if not, then we will first insert insert_t into wp, and update insert_t.
 				iter = wp.insert(iter, insert_t);
 				iter++;
 				insert_t.addr = iter->addr;
 				insert_t.size = iter->size;
 				insert_t.flags = iter->flags | target_flags;
 			}
-			iter = wp.erase(iter);//anyway, we will need to delete the wp we walked through, since we will add them back in the future(Which is also in this code).
+			iter = wp.erase(iter);
+            //anyway, we will need to delete the wp we walked through, since we will add them back in the future(Which is also in this code).
 		}
 		
-		//Ending part
-		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {//If it's the end of the deque or the end+1 address is not covered by any wp
+		//Ending part - Insert the last large watchpoint.
+		if (iter == wp.end() || !addr_covered( (target_addr + target_size), (*iter) ) ) {
+            //If it's the end of the deque or the end+1 address is not covered by any wp
 			//Then we simply add the watchpoint on it.
-			if (target_addr + target_size > insert_t.addr + insert_t.size) {//If there is still some blank between insert_t and the end of the adding address.
-				if (insert_t.flags == target_flags) {//if the insert node's flag matches the output node, then we just enlarge the insert node.
+			if (target_addr + target_size - 1 > insert_t.addr + insert_t.size - 1) {
+                //If there is still some blank between insert_t and the end of the adding address.
+				if (insert_t.flags == target_flags) {
+                    //if the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = target_addr + target_size - insert_t.addr;
 				}
-				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
+				else {
+                    //if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
 					if (iter == wp.end() ) {
 						wp.push_back(insert_t);
 						iter = wp.end();
@@ -2671,12 +2849,17 @@ namespace Hongyi_WatchPoint{
 				iter++;
 			}
 		}
-		else {//Then the end+1 address is covered by some wp. Then we'll need to test whether the flags are the same.
+		else {
+            //Then the end+1 address is covered by some wp. Then we'll need to test whether the flags are the same.
 			//First check if there is any blank between the two nodes.
-			if (iter->addr != insert_t.addr + insert_t.size) {//If there is some blank between the two nodes.
-				if (insert_t.flags == target_flags)//if the insert node's flag matches the output node, then we just enlarge the insert node.
+			if (iter->addr != insert_t.addr + insert_t.size) {
+                //If there is some blank between the two nodes.
+				if (insert_t.flags == target_flags) {
+                    //if the insert node's flag matches the output node, then we just enlarge the insert node.
 					insert_t.size = iter->addr - insert_t.addr;
-				else {//if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
+                }
+				else {
+                    //if the flag doesn't match, then we will need to write the "insert" into wp and refresh "insert"
 					iter = wp.insert(iter, insert_t);
 					iter++;
 					insert_t.addr = insert_t.addr + insert_t.size;
@@ -2692,8 +2875,10 @@ namespace Hongyi_WatchPoint{
 				wp.erase(iter);
 			}
 			//If they aren't the same. We then need to merge part of them(maybe). And split the rest.
-			else if (iter->addr < target_addr + target_size) {//If the ending address is not covered, no need to split. (Merging is done by above)
-				if (flag_inclusion (target_flags, iter->flags) ) {//if the target_flag is included by iter, then we just left it as before
+			else if (iter->addr <= target_addr + target_size - 1) {
+                //If the ending address is not covered, no need to split. (Merging is done by above)
+				if (flag_inclusion (target_flags, iter->flags) ) {
+                    //if the target_flag is included by iter, then we just left it as before
 					iter = wp.insert(iter, insert_t);
 				}
 				else {
@@ -2728,16 +2913,54 @@ namespace Hongyi_WatchPoint{
 	
 	template <class ADDRESS, class FLAGS>
 	void MEM_WatchPoint<ADDRESS, FLAGS>::rm_watchpoint (ADDRESS target_addr, ADDRESS target_size, FLAGS target_flags) {
-		if (target_size == 0)
+		if (target_size == 0) { // This is special for size = 0;
+            wp.clear();
 			return;
+        }
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator previous_iter;
-		//starting part
+		
+        //starting part
 		iter = search_address(target_addr, wp);
+
+        if (iter != wp.end() && iter->size == 0 && (iter->flags & target_flags) ) {
+            // This is special for size = 0.  We're deleting the "all memory
+            // covered" watchpoint.
+            if (target_addr == 0) {
+                iter->addr = target_size;
+                iter->size = 0 - target_size;
+                if (iter->flags != target_flags) {
+                    watchpoint_t<ADDRESS, FLAGS> insert_t = {0, target_size, iter->flags & ~target_flags};
+                    wp.insert(iter, insert_t);
+                }
+            }
+            else if (target_addr + target_size == 0) {
+                iter->size = target_addr;
+                if (iter->flags != target_flags) {
+                    watchpoint_t<ADDRESS, FLAGS> insert_t = {target_addr, target_size, iter->flags & ~target_flags};
+                    wp.push_back(insert_t);
+                }
+            }
+            else {
+                iter->addr = target_addr + target_size;
+                iter->size = 0 - iter->addr;
+                watchpoint_t<ADDRESS, FLAGS> insert_t = {0, target_addr, iter->flags};
+                if (iter->flags != target_flags) {
+                    watchpoint_t<ADDRESS, FLAGS> insert_T = {target_addr, target_size, iter->flags & ~target_flags};
+                    iter = wp.insert(iter, insert_T);
+                }
+                wp.insert(iter, insert_t);
+            }
+            return;
+        }
+
 		if (iter == wp.end() )
 			return;
 		if (addr_covered(target_addr - 1, (*iter) ) ) {
-			if (target_addr + target_size < iter->addr + iter->size) {
+            // Check to see if the iterator needs split.
+            // If it starts at least one addres before the guy we're adding,
+            // we must split.
+			if (target_addr + target_size - 1 < iter->addr + iter->size - 1) {
 				if (target_flags & iter->flags) {
 					watchpoint_t<ADDRESS, FLAGS> insert_t = {iter->addr, target_addr - iter->addr, iter->flags};
 					iter->size = iter->addr + iter->size - target_addr - target_size;
@@ -2763,7 +2986,7 @@ namespace Hongyi_WatchPoint{
 				}
 			}
 		}
-		else if (target_addr + target_size < iter->addr + iter->size) {
+		else if (target_addr + target_size - 1 < iter->addr + iter->size - 1) {
 			if (iter->flags & target_flags) {
 				watchpoint_t<ADDRESS, FLAGS> insert_t = {iter->addr, target_addr + target_size - iter->addr, iter->flags & (~target_flags)};
 				iter->size = iter->addr + iter->size - target_addr - target_size;
@@ -2782,7 +3005,7 @@ namespace Hongyi_WatchPoint{
 		}
 
 		//iterating part		
-		while (iter != wp.end() && iter->addr + iter->size < target_addr + target_size) {
+		while (iter != wp.end() && iter->addr + iter->size - 1 < target_addr + target_size - 1) {
 			if (iter->flags & target_flags) {
 				iter->flags = iter->flags & (~target_flags);
 				if (iter->flags) {
@@ -2863,12 +3086,17 @@ namespace Hongyi_WatchPoint{
 			return false;
 		typename deque<watchpoint_t<ADDRESS, FLAGS> >::iterator iter;
 		iter = search_address(target_addr, wp);
+        if (iter != wp.end() && iter->size == 0)
+            return (iter->flags & target_flags);
 		if (iter == wp.end() )
 			return false;
-		while (iter->addr < target_addr + target_size) {
+		while (iter != wp.end() && iter->addr <= target_addr + target_size - 1) {
 			if (iter->flags & target_flags)
 				return true;
 			iter++;
+            if(iter == wp.end()) {
+                break;
+            }
 		}
 		return false;
 	}
