@@ -197,7 +197,7 @@ namespace Hongyi_WatchPoint {
         typename deque< range_t<ADDRESS> >::iterator				Range_load	(ADDRESS start_addr,	ADDRESS end_addr, bool hit_miss_care);//
 		//Func:		Search within the range_cache, and automatically increment hits and misses.
 		//return:	the iterator that points to the range_t that is [start_addr, end_addr]. If the searched range is not within cache it would be insert at the front(The most recently used).
-		void														Range_cleanup();
+		void														Range_cleanup(bool range_update);
 		//Func:		This function would be called in Insert_wp, Modify_wp, Push_back_wp and Erase_wp. It would check if after these calling, is range_cache has overflow? If there are, then increment the kick number.
 		deque< watchpoint_t<ADDRESS, FLAGS> >	wp;
 		deque< range_t<ADDRESS> >	range_cache;
@@ -666,7 +666,7 @@ namespace Hongyi_WatchPoint{
 					modify_t.size = start_iter->size + target_size;
 					modify_t.flags = start_iter->flags;
 					Modify_wp(modify_t, start_iter, wp_operate);
-					Range_cleanup();
+					Range_cleanup(true);
 					return;
 				}
 			}
@@ -675,7 +675,7 @@ namespace Hongyi_WatchPoint{
 			insert_t.size = target_size;
 			insert_t.flags = target_flags;
 			Push_back_wp(insert_t, wp_operate);
-			Range_cleanup();
+			Range_cleanup(true);
 			return;
 		}
 
@@ -739,7 +739,7 @@ namespace Hongyi_WatchPoint{
 							modify_t.size = iter->size - target_size;
 							modify_t.flags = iter->flags;
 							Modify_wp(modify_t, iter, wp_operate);
-							Range_cleanup();
+							Range_cleanup(true);
 							return;
 						}
                         // If the current insertion is bigger than what it hit
@@ -765,7 +765,7 @@ namespace Hongyi_WatchPoint{
 							Modify_wp(modify_t, iter, wp_operate);
                             insert_t.size = target_size;
 							Insert_wp(insert_t, iter, wp_operate);
-							Range_cleanup();
+							Range_cleanup(true);
 							return;
 						}
                         // Remove old guy because we'll add the new guy below.
@@ -783,7 +783,7 @@ namespace Hongyi_WatchPoint{
 					insert_t.size = target_size;
 					insert_t.flags = target_flags | iter->flags;
 					Insert_wp(insert_t, iter, wp_operate);
-					Range_cleanup();
+					Range_cleanup(true);
 					return;
 				}
 				else {
@@ -1072,7 +1072,7 @@ namespace Hongyi_WatchPoint{
 				iter++;
 			}
 		}
-		Range_cleanup();
+		Range_cleanup(true);
 		return;
 	}
 
@@ -1157,12 +1157,12 @@ namespace Hongyi_WatchPoint{
 				}
 				Insert_wp(insert_t, iter, wp_operate);
 			}
-			Range_cleanup();
+			Range_cleanup(true);
 			return;
 		}
 		
 		if (iter == wp.end() ) {
-			Range_cleanup();
+			Range_cleanup(true);
 			return;
 		}
 		
@@ -1224,7 +1224,7 @@ namespace Hongyi_WatchPoint{
 						Insert_wp(insert_t, iter, wp_operate);
 					}
 				}
-				Range_cleanup();
+				Range_cleanup(true);
 				return;
 			}
 			if (target_flags & iter->flags) {
@@ -1263,7 +1263,7 @@ namespace Hongyi_WatchPoint{
 					}
 				}
 			}
-			Range_cleanup();
+			Range_cleanup(true);
 			return;
 		}
 
@@ -1409,7 +1409,7 @@ namespace Hongyi_WatchPoint{
  			//previous_iter->size += iter->size;
  			iter = Erase_wp(iter, wp_operate);
  		}
- 		Range_cleanup();
+ 		Range_cleanup(true);
 		return;
 	}
 	
@@ -1558,7 +1558,7 @@ namespace Hongyi_WatchPoint{
             }
             // TODO: We need to find a way to just "always hit" in the range cache.
             //Range_load(0, -1, hit_miss_care);
-            //Range_cleanup();
+            //Range_cleanup(false);
 			return false;
 		}
 
@@ -1603,7 +1603,7 @@ namespace Hongyi_WatchPoint{
             }
 			top_page++;
 			Range_load(0, -1, hit_miss_care);
-            Range_cleanup();
+            Range_cleanup(false);
 			return (iter->flags & target_flags);
 		}
 		if (iter == wp.end() ) {
@@ -1682,7 +1682,7 @@ namespace Hongyi_WatchPoint{
                 }
 				top_page++;
 			}
-            Range_cleanup();
+            Range_cleanup(false);
 			return false;
 		}
 
@@ -1817,7 +1817,7 @@ namespace Hongyi_WatchPoint{
                 wlb.pop_back();
             wlb.push_front(temp_val);
         }
-        Range_cleanup();
+        Range_cleanup(false);
 		
 		//	cout << "Exited general_fault" << endl;
 		return wp_fault;
@@ -2465,7 +2465,7 @@ namespace Hongyi_WatchPoint{
 	}
 
 	template <class ADDRESS, class FLAGS>
-	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup() {
+	void WatchPoint<ADDRESS, FLAGS>::Range_cleanup(bool range_update) {
 		if (range_cache.size() > RANGE_CACHE_SIZE) {
 			typename deque< range_t<ADDRESS> >::iterator iter;
             range.kick += range_cache.size() - RANGE_CACHE_SIZE;
@@ -2488,11 +2488,13 @@ namespace Hongyi_WatchPoint{
                 range.dirty_kick++;
             }
 		}
-		range.changes++;
-        range.total_cur_range_num += range.cur_range_num;
-		
-		if (range.cur_range_num > range.max_range_num)
-			range.max_range_num = range.cur_range_num;
+		if (range_update) {
+			range.changes++;
+	        range.total_cur_range_num += range.cur_range_num;
+			
+			if (range.cur_range_num > range.max_range_num)
+				range.max_range_num = range.cur_range_num;
+		}
 		return;
 	}
 
