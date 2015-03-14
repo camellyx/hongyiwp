@@ -1,0 +1,2 @@
+Simulate software based watchpoint with Intel Pintool to collect overhead for software based watchpoint system.
+For software based watchpoint system, the kernel usually mark the watched memory address' page unavailable. Then there would be a page fault whenever the thread touches the "watched address"
